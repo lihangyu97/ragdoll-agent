@@ -1,0 +1,4 @@
+# pnpm 11 项目级设置（settings 已从 package.json 的 "pnpm" 字段迁移到这里）
+# 允许 esbuild 执行 postinstall（安装平台二进制）
+allowBuilds:
+  esbuild: true
