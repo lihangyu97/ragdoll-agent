@@ -1,12 +1,7 @@
-import { run } from "@agent"
+import Application from "@application"
 
-import loggerHooks from "@toy/loggerHooks"
+const app = new Application()
 
-loggerHooks.track()
-
-const threadId = `thread-${Date.now()}`
-
-console.log("=== 第一轮（thread: default） ===")
-await run("我的名字是：李航宇，当前天气怎么样？", { threadId })
-console.log("=== 第二轮（同一 thread，应记得上一轮） ===")
-await run("我叫什么名字来着？", { threadId })
+await app.start().catch(error => {
+  app.handleStartupError(error)
+})

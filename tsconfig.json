@@ -19,6 +19,8 @@
     "paths": {
       "@agent": ["./src/agent/index"],
       "@agent/*": ["./src/agent/*"],
+      "@application": ["./src/application/index"],
+      "@channels/*": ["./src/channels/*"],
       "@config/*": ["./src/config/*"],
       "@sqlite/*": ["./src/sqlite/*"],
       "@toy/*": ["./src/toy/*"]
