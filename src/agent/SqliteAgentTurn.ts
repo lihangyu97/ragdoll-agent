@@ -74,8 +74,8 @@ export default class SqliteAgentTurn {
         AIMessage.isInstance(msg) && msg.tool_calls?.length
           ? JSON.stringify(msg.tool_calls)
           : null,
-        isToolResult ? null : content,
-        isToolResult ? content : null
+        isToolResult ? null : content || null,
+        isToolResult ? content || null : null
       )
   }
 
@@ -92,16 +92,16 @@ export default class SqliteAgentTurn {
   // 注册 hook 收集本轮所有输入/决策/结果/回复
   private registerHooks() {
     trackHook(Hooks.INPUT, input => {
-      this.record("INPUT", undefined, input)
+      this.record(Hooks.INPUT, undefined, input)
     })
     trackHook(Hooks.TOOL_CALL, (msg, node) => {
-      this.record("TOOL_CALL", node, msg.text, msg)
+      this.record(Hooks.TOOL_CALL, node, msg.text, msg)
     })
     trackHook(Hooks.TOOL_RESULT, (msg, node) => {
-      this.record("TOOL_RESULT", node, msg.text, msg)
+      this.record(Hooks.TOOL_RESULT, node, msg.text, msg)
     })
     trackHook(Hooks.AGENT_RESULT, (msg, node) => {
-      this.record("AGENT_RESULT", node, msg.text, msg)
+      this.record(Hooks.AGENT_RESULT, node, msg.text, msg)
     })
   }
 }
