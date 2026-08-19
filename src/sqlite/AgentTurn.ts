@@ -8,7 +8,7 @@ import {
   type BaseMessage
 } from "@langchain/core/messages"
 import { DB_PATH } from "@config/agent"
-import { trackHook, Hooks } from "./hooks"
+import { trackHook, Hooks } from "@agent/hooks"
 
 export default class SqliteAgentTurn {
   private readonly db: DatabaseSync

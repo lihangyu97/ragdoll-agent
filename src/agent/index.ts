@@ -2,8 +2,8 @@ import { ChatOpenAI } from "@langchain/openai"
 import { createAgent } from "langchain"
 import { API_KEY, BASE_URL, MODEL } from "@config/agent"
 import { triggerHooks, triggerInputHooks } from "./hooks"
-import SqliteCheckpointer from "./SqliteCheckpointer"
-import SqliteAgentTurn from "./SqliteAgentTurn"
+import Checkpointer from "@sqlite/Checkpointer"
+import AgentTurn from "@sqlite/AgentTurn"
 import _tools from "@toy/tools"
 import _systemPrompt from "@toy/systemPrompt"
 
@@ -15,8 +15,8 @@ const model = new ChatOpenAI({
   configuration: { baseURL: BASE_URL }
 })
 
-const checkpointer = new SqliteCheckpointer()
-const agentTurn = new SqliteAgentTurn()
+const checkpointer = new Checkpointer()
+const agentTurn = new AgentTurn()
 
 export const agent = createAgent({
   model,
@@ -26,10 +26,7 @@ export const agent = createAgent({
 })
 
 // 运行 agent：thread_id 隔离会话，同一 thread 连续调用会延续历史对话
-export async function run(
-  input = "当前天气怎么样？",
-  options?: { threadId?: string }
-) {
+export async function run(input: string, options?: { threadId?: string }) {
   const threadId = options?.threadId ?? `${Date.now()}`
   // 开始一轮 turn（先于 INPUT hook），stream 结束关闭
   agentTurn.beginTurn(threadId)

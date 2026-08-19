@@ -20,6 +20,7 @@
       "@agent": ["./src/agent/index"],
       "@agent/*": ["./src/agent/*"],
       "@config/*": ["./src/config/*"],
+      "@sqlite/*": ["./src/sqlite/*"],
       "@toy/*": ["./src/toy/*"]
     }
   },
