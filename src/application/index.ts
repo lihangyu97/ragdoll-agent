@@ -1,1 +1,3 @@
-export default class Application {}
+export default class Application {
+  constructor() {}
+}
