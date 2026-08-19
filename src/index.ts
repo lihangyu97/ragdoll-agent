@@ -1,19 +1,10 @@
-import { run } from "./agent"
-import { trackHook, Hooks } from "./agent/hooks"
+import { run } from "@agent"
 
-// 注册打印 hooks：同一类型可注册多个，按注册顺序执行
-trackHook(Hooks.TOOL_CALL, (msg, node) => {
-  console.log(
-    `[${node}] ${msg.type}: ${msg.text} toolCalls: ${JSON.stringify(
-      msg.tool_calls
-    )}`
-  )
-})
-trackHook(Hooks.TOOL_RESULT, (msg, node) => {
-  console.log(`[${node}] ${msg.type}(${msg.tool_call_id}): ${msg.text}`)
-})
-trackHook(Hooks.AGENT_RESULT, (msg, node) => {
-  console.log(`[${node}] ${msg.type}: ${msg.text}`)
-})
+import "@agent/_loggerHooks"
 
-await run()
+const threadId = `thread-${Date.now()}`
+
+console.log("=== 第一轮（thread: default） ===")
+await run("我的名字是：李航宇，当前天气怎么样？", { threadId })
+console.log("=== 第二轮（同一 thread，应记得上一轮） ===")
+await run("我叫什么名字来着？", { threadId })

@@ -17,6 +17,8 @@
     "erasableSyntaxOnly": true,
     "moduleDetection": "force",
     "paths": {
+      "@agent": ["./src/agent/index"],
+      "@agent/*": ["./src/agent/*"],
       "@config/*": ["./src/config/*"]
     }
   },
