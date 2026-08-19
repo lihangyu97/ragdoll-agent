@@ -1,25 +1,17 @@
-import { mkdirSync } from "node:fs"
-import { dirname } from "node:path"
 import { randomUUID } from "node:crypto"
-import { DatabaseSync } from "node:sqlite"
 import {
   AIMessage,
   ToolMessage,
   type BaseMessage
 } from "@langchain/core/messages"
-import { DB_PATH } from "@config/sqlite"
 import { trackHook, Hooks } from "@agent/hooks"
+import SqliteBase from "@sqlite/SqliteBase"
 
-export default class SqliteAgentTurn {
-  private readonly db: DatabaseSync
+export default class SqliteAgentTurn extends SqliteBase {
   private turnId: string | null = null
   private threadId: string | null = null
 
-  constructor() {
-    mkdirSync(dirname(DB_PATH), { recursive: true })
-    this.db = new DatabaseSync(DB_PATH)
-    this.db.exec("PRAGMA journal_mode = WAL")
-    this.db.exec("PRAGMA busy_timeout = 5000")
+  protected override createTables() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS agent_turns (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +27,22 @@ export default class SqliteAgentTurn {
         created_at TEXT DEFAULT (datetime('now', 'localtime'))
       )
     `)
-    this.registerHooks()
+  }
+
+  // 注册 hook 收集本轮所有输入/决策/结果/回复（基类建表后自动调用）
+  protected override init() {
+    trackHook(Hooks.INPUT, input => {
+      this.record(Hooks.INPUT, undefined, input)
+    })
+    trackHook(Hooks.TOOL_CALL, (msg, node) => {
+      this.record(Hooks.TOOL_CALL, node, msg.text, msg)
+    })
+    trackHook(Hooks.TOOL_RESULT, (msg, node) => {
+      this.record(Hooks.TOOL_RESULT, node, msg.text, msg)
+    })
+    trackHook(Hooks.AGENT_RESULT, (msg, node) => {
+      this.record(Hooks.AGENT_RESULT, node, msg.text, msg)
+    })
   }
 
   // 开始一轮 turn：调用模型前生成 turnId，之后 hook 收集的动作都归入本轮
@@ -87,21 +94,5 @@ export default class SqliteAgentTurn {
       return msg.tool_calls.map(call => call.id).join(",")
     }
     return null
-  }
-
-  // 注册 hook 收集本轮所有输入/决策/结果/回复
-  private registerHooks() {
-    trackHook(Hooks.INPUT, input => {
-      this.record(Hooks.INPUT, undefined, input)
-    })
-    trackHook(Hooks.TOOL_CALL, (msg, node) => {
-      this.record(Hooks.TOOL_CALL, node, msg.text, msg)
-    })
-    trackHook(Hooks.TOOL_RESULT, (msg, node) => {
-      this.record(Hooks.TOOL_RESULT, node, msg.text, msg)
-    })
-    trackHook(Hooks.AGENT_RESULT, (msg, node) => {
-      this.record(Hooks.AGENT_RESULT, node, msg.text, msg)
-    })
   }
 }

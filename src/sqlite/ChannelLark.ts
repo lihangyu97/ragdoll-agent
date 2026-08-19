@@ -1,7 +1,4 @@
-import { mkdirSync } from "node:fs"
-import { dirname } from "node:path"
-import { DatabaseSync } from "node:sqlite"
-import { DB_PATH } from "@config/sqlite"
+import SqliteBase from "@sqlite/SqliteBase"
 
 export type ChannelLarkRecord = {
   event_type: string
@@ -17,15 +14,9 @@ export type ChannelLarkRecord = {
   content: string
 }
 
-// 飞书消息落库（channel_lark 表）
-export default class SqliteChannelLark {
-  private readonly db: DatabaseSync
-
-  constructor() {
-    mkdirSync(dirname(DB_PATH), { recursive: true })
-    this.db = new DatabaseSync(DB_PATH)
-    this.db.exec("PRAGMA journal_mode = WAL")
-    this.db.exec("PRAGMA busy_timeout = 5000")
+// 飞书消息落库（channel_lark 表 + channel_lark_user 表）
+export default class SqliteChannelLark extends SqliteBase {
+  protected override createTables() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS channel_lark (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
