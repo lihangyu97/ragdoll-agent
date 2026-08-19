@@ -4,8 +4,8 @@ import { API_KEY, BASE_URL, MODEL } from "@config/agent"
 import { triggerHooks, triggerInputHooks } from "./hooks"
 import SqliteCheckpointer from "./SqliteCheckpointer"
 import SqliteAgentTurn from "./SqliteAgentTurn"
-import _tools from "./_tools"
-import _systemPrompt from "./_systemPrompt"
+import _tools from "@toy/tools"
+import _systemPrompt from "@toy/systemPrompt"
 
 const model = new ChatOpenAI({
   model: MODEL,

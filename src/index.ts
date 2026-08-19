@@ -1,6 +1,8 @@
 import { run } from "@agent"
 
-import "@agent/_loggerHooks"
+import loggerHooks from "@toy/loggerHooks"
+
+loggerHooks.track()
 
 const threadId = `thread-${Date.now()}`
 

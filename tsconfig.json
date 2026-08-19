@@ -19,7 +19,8 @@
     "paths": {
       "@agent": ["./src/agent/index"],
       "@agent/*": ["./src/agent/*"],
-      "@config/*": ["./src/config/*"]
+      "@config/*": ["./src/config/*"],
+      "@toy/*": ["./src/toy/*"]
     }
   },
   "include": ["src/**/*.ts"]
