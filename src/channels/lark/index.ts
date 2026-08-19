@@ -1,5 +1,6 @@
 import * as lark from "@larksuiteoapi/node-sdk"
 import { LARK_APP_ID, LARK_APP_SECRET, LARK_DOMAIN } from "@config/lark"
+import SqliteChannelLark from "@sqlite/ChannelLark"
 import type { LarkMessage } from "./types"
 import { parseMessageContent } from "./message"
 
@@ -14,7 +15,7 @@ export class LarkClient {
   private readonly larkDomain: lark.Domain
   private readonly client: lark.Client
   private readonly ws: lark.WSClient
-
+  private readonly channelLark = new SqliteChannelLark()
   private started = false
 
   constructor() {
@@ -42,12 +43,54 @@ export class LarkClient {
       msg.message.mentions
     )
 
-    console.log(`🔥 text ===>`, text, `<=== 🔥`)
+    const openId = msg.sender.sender_id?.open_id
+    const senderName = openId ? await this.getUserName(openId) : "unknown"
 
-    const sender = msg.sender.sender_id?.open_id ?? "unknown"
-    console.log(`[lark] ${sender} (${msg.message.chat_type}): ${text}`)
+    // 飞书消息落库
+    this.channelLark.insert({
+      event_type: msg.event_type ?? "",
+      app_id: msg.app_id ?? "",
+      chat_id: msg.message.chat_id,
+      chat_type: msg.message.chat_type,
+      message_id: msg.message.message_id,
+      message_type: msg.message.message_type,
+      thread_id: msg.message.thread_id ?? null,
+      sender_open_id: openId ?? null,
+      sender_type: msg.sender.sender_type,
+      sender_name: senderName,
+      content: text
+    })
 
-    await this.replyText(msg.message.message_id, `收到：${text}`)
+    await this.replyText(
+      msg.message.message_id,
+      `收到：${text}\n发送人：${senderName}`
+    )
+  }
+
+  /**
+   * 通过 open_id 获取用户名：
+   * 1. 先查 channel_lark_user 表，命中直接返回；
+   * 2. 没有再调飞书通讯录接口（contact.v3.user.get），查到后写库；
+   * 3. 都失败返回 open_id 兜底，避免影响消息回复。
+   */
+  private async getUserName(openId: string): Promise<string> {
+    const cached = this.channelLark.getUserName(openId)
+    if (cached) return cached
+
+    try {
+      const res = await this.client.contact.v3.user.get({
+        path: { user_id: openId },
+        params: { user_id_type: "open_id" }
+      })
+      const name = res.data?.user?.name
+      if (name) {
+        this.channelLark.upsertUser(openId, name)
+        return name
+      }
+    } catch (err) {
+      console.error(`[lark] 获取用户信息失败（open_id=${openId}）：`, err)
+    }
+    return openId
   }
 
   /** 回复指定消息（文本） */

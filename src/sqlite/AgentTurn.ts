@@ -7,7 +7,7 @@ import {
   ToolMessage,
   type BaseMessage
 } from "@langchain/core/messages"
-import { DB_PATH } from "@config/agent"
+import { DB_PATH } from "@config/sqlite"
 import { trackHook, Hooks } from "@agent/hooks"
 
 export default class SqliteAgentTurn {
@@ -32,7 +32,7 @@ export default class SqliteAgentTurn {
         tool_calls TEXT,
         content TEXT,
         tools_result TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TEXT DEFAULT (datetime('now', 'localtime'))
       )
     `)
     this.registerHooks()

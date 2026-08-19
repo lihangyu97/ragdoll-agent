@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs"
 import { dirname } from "node:path"
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite"
-import { DB_PATH } from "@config/agent"
+import { DB_PATH } from "@config/sqlite"
 
 export default class SqliteCheckpointer {
   private readonly checkpointer: SqliteSaver

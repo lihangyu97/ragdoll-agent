@@ -8,6 +8,8 @@ export type LarkMention = {
 /** im.message.receive_v1 事件里我们关心的字段（SDK 完整类型见 EventHandles） */
 export interface LarkMessage {
   event_id?: string
+  event_type?: string
+  app_id?: string
   tenant_key?: string
   sender: {
     sender_id?: { union_id?: string; user_id?: string; open_id?: string }
@@ -21,6 +23,7 @@ export interface LarkMessage {
     message_type: string
     content: string
     create_time: string
+    thread_id?: string
     mentions?: LarkMention[]
   }
 }
