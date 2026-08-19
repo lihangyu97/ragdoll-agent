@@ -1,22 +1,11 @@
 import * as lark from "@larksuiteoapi/node-sdk"
 import { LARK_APP_ID, LARK_APP_SECRET, LARK_DOMAIN } from "@config/lark"
 import type { LarkMessage } from "./types"
-
-export type { LarkMessage, LarkMessageHandler } from "./types"
-
-/** 解析消息 content（文本消息是 JSON 字符串，形如 {"text":"..."}） */
-export function parseTextContent(content: string): string {
-  try {
-    const parsed = JSON.parse(content) as { text?: string }
-    return parsed.text ?? ""
-  } catch {
-    return content
-  }
-}
+import { parseMessageContent } from "./message"
 
 /**
  * 飞书客户端：通过 WebSocket 长连接接收事件推送（im.message.receive_v1），
- * 免公网回调地址。收到文本消息后自动回复「收到：xxx」。
+ * 免公网回调地址。收到消息后自动回复「收到：xxx」。
  */
 export class LarkClient {
   private readonly appId: string
@@ -45,9 +34,16 @@ export class LarkClient {
 
   /** 收到消息的处理逻辑 */
   private async handleMessage(msg: LarkMessage): Promise<void> {
-    if (msg.message.message_type !== "text") return
+    console.log(`🔥 msg ===>`, JSON.stringify(msg), `<=== 🔥`)
 
-    const text = parseTextContent(msg.message.content)
+    const text = parseMessageContent(
+      msg.message.message_type,
+      msg.message.content,
+      msg.message.mentions
+    )
+
+    console.log(`🔥 text ===>`, text, `<=== 🔥`)
+
     const sender = msg.sender.sender_id?.open_id ?? "unknown"
     console.log(`[lark] ${sender} (${msg.message.chat_type}): ${text}`)
 
