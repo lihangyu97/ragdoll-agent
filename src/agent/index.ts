@@ -3,6 +3,7 @@ import { ChatOpenAI } from "@langchain/openai"
 import { createAgent } from "langchain"
 import { tool } from "@langchain/core/tools"
 import { API_KEY, BASE_URL, MODEL } from "@config/agent"
+import { triggerHooks } from "./hooks"
 
 const model = new ChatOpenAI({
   model: MODEL,
@@ -49,3 +50,18 @@ export const agent = createAgent({
 
 Always reply in Chinese (中文).`
 })
+
+// 运行 agent，流式遍历每个节点的新增消息并分发到已注册的 hooks
+export async function run(input = "当前天气怎么样？") {
+  const stream = await agent.stream(
+    { messages: [{ role: "user", content: input }] },
+    { streamMode: "updates" }
+  )
+  for await (const step of stream) {
+    for (const [node, update] of Object.entries(step)) {
+      for (const msg of update.messages ?? []) {
+        triggerHooks(msg, node)
+      }
+    }
+  }
+}
