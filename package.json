@@ -22,5 +22,12 @@
       "version": "11.22.0",
       "onFail": "ignore"
     }
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.8",
+    "@langchain/openai": "^1.5.8",
+    "dotenv": "^17.4.2",
+    "langchain": "^1.5.9",
+    "zod": "^4.4.3"
   }
 }
