@@ -38,6 +38,19 @@ export function getPendingTrace(): AgentTraceRecord | null {
   return row ?? null
 }
 
+/** 取某 thread 最新一条 processing 的 trace（AGENT_RESULT 触发时 worker 尚未标记 done） */
+export function getLatestProcessingTrace(threadId: string): AgentTraceRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM agent_traces
+       WHERE thread_id = ? AND status = 'processing'
+       ORDER BY created_at DESC
+       LIMIT 1`
+    )
+    .get(threadId) as AgentTraceRecord | undefined
+  return row ?? null
+}
+
 /** 原子更新状态（仅当当前状态匹配时） */
 export function updateTraceStatus(id: number, fromStatus: string, toStatus: string): boolean {
   const result = getDb()
