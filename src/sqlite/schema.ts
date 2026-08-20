@@ -50,12 +50,13 @@ export function initSchema() {
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_threads (
-      thread_id   TEXT PRIMARY KEY,
-      chat_type   TEXT NOT NULL,
-      chat_id     TEXT NOT NULL,
-      status      TEXT NOT NULL DEFAULT 'active',
-      created_at  TEXT DEFAULT (datetime('now', 'localtime')),
-      updated_at  TEXT DEFAULT (datetime('now', 'localtime'))
+      thread_id       TEXT PRIMARY KEY,
+      chat_type       TEXT NOT NULL,
+      chat_id         TEXT NOT NULL,
+      sender_open_id  TEXT,
+      status          TEXT NOT NULL DEFAULT 'active',
+      created_at      TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at      TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `)
 
@@ -69,6 +70,17 @@ export function initSchema() {
       status      TEXT NOT NULL DEFAULT 'pending',
       created_at  TEXT DEFAULT (datetime('now', 'localtime')),
       updated_at  TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS logger (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      level       TEXT NOT NULL,
+      message     TEXT NOT NULL,
+      data        TEXT,
+      thread_id   TEXT,
+      created_at  TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `)
 }

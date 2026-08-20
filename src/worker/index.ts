@@ -1,5 +1,7 @@
 import { run } from '@agent'
 import { getPendingTrace, updateTraceStatus } from '@sqlite/agentTraces'
+import { logger } from '@logger/index'
+import { threadContext } from '@logger/context'
 
 /**
  * Agent Worker：每隔 3s 轮询 agent_traces 表，取最早一条 pending 记录，
@@ -45,14 +47,18 @@ export class Worker {
 
       console.log(`[worker] 处理 trace#${trace.id} thread=${trace.thread_id}`)
 
-      try {
-        await run(trace.input_text, { threadId: trace.thread_id })
-        updateTraceStatus(trace.id, 'processing', 'done')
-        console.log(`[worker] trace#${trace.id} 完成`)
-      } catch (err) {
-        updateTraceStatus(trace.id, 'processing', 'failed')
-        console.error(`[worker] trace#${trace.id} 失败:`, err)
-      }
+      // 整个处理链路包进 threadId 上下文，logger 自动关联
+      await threadContext.run(trace.thread_id, async () => {
+        try {
+          await run(trace.input_text, { threadId: trace.thread_id })
+          updateTraceStatus(trace.id, 'processing', 'done')
+          console.log(`[worker] trace#${trace.id} 完成`)
+        } catch (err) {
+          updateTraceStatus(trace.id, 'processing', 'failed')
+          logger.error(`[worker] trace#${trace.id} 失败`, err)
+          console.error(`[worker] trace#${trace.id} 失败:`, err)
+        }
+      })
       // 处理完立即查下一条，不等待
     }
   }

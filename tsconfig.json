@@ -24,7 +24,8 @@
       "@config/*": ["./src/config/*"],
       "@sqlite/*": ["./src/sqlite/*"],
       "@toy/*": ["./src/toy/*"],
-      "@worker/*": ["./src/worker/*"]
+      "@worker/*": ["./src/worker/*"],
+      "@logger/*": ["./src/logger/*"]
     }
   },
   "include": ["src/**/*.ts"]

@@ -76,7 +76,7 @@ export class LarkClient {
     })
 
     // 写入 agent 队列
-    ensureThread(threadId, msg.message.chat_type, chatId)
+    ensureThread(threadId, msg.message.chat_type, chatId, openId ?? null)
     insertTrace(threadId, messageId, chatId, text)
 
     // 立即回复「思考中」
