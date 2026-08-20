@@ -6,5 +6,4 @@ export const LARK_APP_ID = process.env.LARK_APP_ID
 export const LARK_APP_SECRET = process.env.LARK_APP_SECRET
 
 // 国内版飞书 feishu（默认）；国际版 Lark 套件用 lark
-export const LARK_DOMAIN =
-  process.env.LARK_DOMAIN === "lark" ? Domain.Lark : Domain.Feishu
+export const LARK_DOMAIN = process.env.LARK_DOMAIN === "lark" ? Domain.Lark : Domain.Feishu

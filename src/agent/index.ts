@@ -1,7 +1,7 @@
 import { ChatOpenAI } from "@langchain/openai"
 import { createAgent } from "langchain"
 import { API_KEY, BASE_URL, MODEL } from "@config/agent"
-import { triggerHooks, triggerInputHooks } from "./hooks"
+import { Hooks, triggerHooks } from "./hooks"
 import Checkpointer from "@sqlite/Checkpointer"
 import AgentTurn from "@sqlite/AgentTurn"
 import _tools from "@toy/tools"
@@ -32,7 +32,7 @@ export async function run(input: string, options?: { threadId?: string }) {
   agentTurn.beginTurn(threadId)
   try {
     // 收集本次输入（stream 之前）
-    triggerInputHooks(input, threadId)
+    triggerHooks(Hooks.INPUT, input, threadId)
     const stream = await agent.stream(
       { messages: [{ role: "user", content: input }] },
       { streamMode: "updates", ...checkpointer.buildConfig(threadId) }
@@ -40,7 +40,7 @@ export async function run(input: string, options?: { threadId?: string }) {
     for await (const step of stream) {
       for (const [node, update] of Object.entries(step)) {
         for (const msg of update.messages ?? []) {
-          triggerHooks(msg, node)
+          triggerHooks(node, msg, threadId)
         }
       }
     }

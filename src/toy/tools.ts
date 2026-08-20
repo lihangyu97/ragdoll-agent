@@ -3,14 +3,12 @@ import { tool } from "@langchain/core/tools"
 
 const getLocation = tool(async () => `hangzhou`, {
   name: "getLocation",
-  description:
-    "Get the user's current city. Call this first before any weather query.",
+  description: "Get the user's current city. Call this first before any weather query.",
   schema: z.object({})
 })
 
 const getWeather = tool(
-  async ({ city }: { city: string }) =>
-    `The weather in ${city} is sunny with clear skies.`,
+  async ({ city }: { city: string }) => `The weather in ${city} is sunny with clear skies.`,
   {
     name: "getWeather",
     description: "Get the current weather condition for a city.",

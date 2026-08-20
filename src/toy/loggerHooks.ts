@@ -7,9 +7,7 @@ export default {
       console.log(`[input] thread=${threadId}: ${input}`)
     })
     trackHook(Hooks.TOOL_CALL, (msg, node) => {
-      console.log(
-        `[${node}] ${msg.type} toolCalls: ${JSON.stringify(msg.tool_calls)}`
-      )
+      console.log(`[${node}] ${msg.type} toolCalls: ${JSON.stringify(msg.tool_calls)}`)
     })
     trackHook(Hooks.TOOL_RESULT, (msg, node) => {
       console.log(`[${node}] ${msg.type}(${msg.tool_call_id}): ${msg.text}`)

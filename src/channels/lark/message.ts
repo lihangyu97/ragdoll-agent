@@ -36,17 +36,11 @@ export type PostContent = {
 function replaceMentions(text: string, mentions?: LarkMention[]): string {
   if (!mentions?.length) return text
   const sorted = [...mentions].sort((a, b) => b.key.length - a.key.length)
-  return sorted.reduce(
-    (acc, m) => acc.split(m.key).join(`@${m.name}`),
-    text
-  )
+  return sorted.reduce((acc, m) => acc.split(m.key).join(`@${m.name}`), text)
 }
 
 /** 解析消息 content（文本消息是 JSON 字符串，形如 {"text":"..."}，提及 key 会替换成 @名字） */
-export function parseTextContent(
-  content: string,
-  mentions?: LarkMention[]
-): string {
+export function parseTextContent(content: string, mentions?: LarkMention[]): string {
   try {
     const parsed = JSON.parse(content) as { text?: string }
     return replaceMentions(parsed.text ?? "", mentions)
@@ -94,9 +88,7 @@ export function parsePostContent(content: string): string {
     return content
   }
   const lines = data.content_v2 ?? data.content ?? []
-  const body = lines
-    .map(line => line.map(el => postElementToText(el)).join(""))
-    .join("\n")
+  const body = lines.map(line => line.map(el => postElementToText(el)).join("")).join("\n")
   return data.title ? `${data.title}\n${body}` : body
 }
 

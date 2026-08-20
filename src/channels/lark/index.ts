@@ -61,10 +61,7 @@ export class LarkClient {
       content: text
     })
 
-    await this.replyText(
-      msg.message.message_id,
-      `收到：${text}\n发送人：${senderName}`
-    )
+    await this.replyText(msg.message.message_id, `收到：${text}\n发送人：${senderName}`)
   }
 
   /**

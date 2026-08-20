@@ -1,8 +1,4 @@
-import {
-  AIMessage,
-  ToolMessage,
-  type BaseMessage
-} from "@langchain/core/messages"
+import { AIMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages"
 
 /* ====== 类型 ====== */
 
@@ -41,18 +37,27 @@ export function trackHook<K extends HookType>(type: K, handler: HookMap[K]) {
   hooks[type].push(handler)
 }
 
-// 分发本次调用输入（agent.stream 之前调用）
-export function triggerInputHooks(input: string, threadId: string) {
-  for (const handler of hooks[Hooks.INPUT]) handler(input, threadId)
-}
-
-// 按消息类型分发到对应 hook 列表（3 个 case）
-export function triggerHooks(msg: BaseMessage, node: string) {
-  if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
-    for (const handler of hooks[Hooks.TOOL_CALL]) handler(msg, node)
-  } else if (ToolMessage.isInstance(msg)) {
-    for (const handler of hooks[Hooks.TOOL_RESULT]) handler(msg, node)
+export function triggerHooks(type: HookType, msgOrInput: string, threadId: string): void
+export function triggerHooks(node: string, msg: BaseMessage, threadId: string): void
+export function triggerHooks(
+  typeOrNode: HookType | string,
+  msgOrInput: BaseMessage | string,
+  threadId: string
+) {
+  if (typeOrNode in Hooks) {
+    // 显式 HookType 分发
+    const type = typeOrNode as HookType
+    for (const handler of hooks[type]) (handler as InputHook)(msgOrInput as string, threadId)
   } else {
-    for (const handler of hooks[Hooks.AGENT_RESULT]) handler(msg, node)
+    // 自动检测消息类型分发
+    const msg = msgOrInput as BaseMessage
+    const node = typeOrNode
+    if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
+      for (const handler of hooks[Hooks.TOOL_CALL]) handler(msg, node)
+    } else if (ToolMessage.isInstance(msg)) {
+      for (const handler of hooks[Hooks.TOOL_RESULT]) handler(msg, node)
+    } else {
+      for (const handler of hooks[Hooks.AGENT_RESULT]) handler(msg, node)
+    }
   }
 }

@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto"
-import {
-  AIMessage,
-  ToolMessage,
-  type BaseMessage
-} from "@langchain/core/messages"
+import { AIMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages"
 import { trackHook, Hooks } from "@agent/hooks"
 import SqliteBase from "@sqlite/SqliteBase"
 
@@ -58,12 +54,7 @@ export default class SqliteAgentTurn extends SqliteBase {
   }
 
   // 写入一行 turn 记录（无活跃 turn 时忽略）
-  private record(
-    hookType: string,
-    node: string | undefined,
-    content: string,
-    msg?: BaseMessage
-  ) {
+  private record(hookType: string, node: string | undefined, content: string, msg?: BaseMessage) {
     if (!this.turnId || !this.threadId) return
     const isToolResult = hookType === Hooks.TOOL_RESULT
     this.db
@@ -78,9 +69,7 @@ export default class SqliteAgentTurn extends SqliteBase {
         node ?? null,
         msg?.type ?? null,
         this.extractToolCallId(msg),
-        AIMessage.isInstance(msg) && msg.tool_calls?.length
-          ? JSON.stringify(msg.tool_calls)
-          : null,
+        AIMessage.isInstance(msg) && msg.tool_calls?.length ? JSON.stringify(msg.tool_calls) : null,
         isToolResult ? null : content || null,
         isToolResult ? content || null : null
       )
