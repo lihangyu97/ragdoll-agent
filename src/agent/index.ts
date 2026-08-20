@@ -32,7 +32,7 @@ export async function run(input: string, options?: { threadId?: string }) {
   agentTurn.beginTurn(threadId)
   try {
     // 收集本次输入（stream 之前）
-    triggerHooks(Hooks.INPUT, input, threadId)
+    triggerHooks(Hooks.INPUT, threadId, input)
     const stream = await agent.stream(
       { messages: [{ role: "user", content: input }] },
       { streamMode: "updates", ...checkpointer.buildConfig(threadId) }
@@ -40,7 +40,7 @@ export async function run(input: string, options?: { threadId?: string }) {
     for await (const step of stream) {
       for (const [node, update] of Object.entries(step)) {
         for (const msg of update.messages ?? []) {
-          triggerHooks(node, msg, threadId)
+          triggerHooks(node, threadId, msg)
         }
       }
     }
