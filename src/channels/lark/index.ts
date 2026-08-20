@@ -7,12 +7,14 @@ import {
 } from "@sqlite/channelLark"
 import { ensureThread } from "@sqlite/agentThreads"
 import { insertTrace } from "@sqlite/agentTraces"
+import { Hooks, trackHook } from "@agent/hooks"
 import type { LarkMessage } from "./types"
 import { parseMessageContent } from "./message"
 
 /**
  * 飞书客户端：通过 WebSocket 长连接接收事件推送（im.message.receive_v1），
- * 免公网回调地址。收到消息后写入 agent_traces 排队，由 Worker 处理。
+ * 免公网回调地址。收到消息后写入 agent_traces 排队，由 Worker 处理；
+ * Worker 完成通过 AGENT_MESSAGE hook 广播回复，这里订阅并发送。
  */
 export class LarkClient {
   private readonly appId: string
@@ -36,6 +38,16 @@ export class LarkClient {
     this.loggerLevel = lark.LoggerLevel.info
     this.client = this.createClient()
     this.ws = this.createWSClient()
+    this.trackAgentMessages()
+  }
+
+  // 订阅 Worker 的 AGENT_MESSAGE 广播，把 agent 回复发回飞书
+  private trackAgentMessages() {
+    trackHook(Hooks.AGENT_MESSAGE, (_threadId, { messageId, text }) => {
+      this.replyToMessage(messageId, text).catch(err =>
+        console.error(`[lark] 回复失败（messageId=${messageId}）：`, err)
+      )
+    })
   }
 
   /** 收到消息的处理逻辑 */

@@ -1,24 +1,15 @@
 import { run } from "@agent"
+import { Hooks, triggerHooks } from "@agent/hooks"
 import { getPendingTrace, updateTraceStatus } from "@sqlite/agentTraces"
-
-export type WorkerOptions = {
-  /** 回复飞书消息 */
-  replyToMessage: (messageId: string, text: string) => Promise<void>
-}
 
 /**
  * Agent Worker：每隔 3s 轮询 agent_traces 表，取最早一条 pending 记录，
- * 调用 agent.run() 处理，完成后标记 done 并通过回调回复。
+ * 调用 agent.run() 处理，完成后标记 done，并通过 AGENT_MESSAGE hook 广播回复。
  */
 export class Worker {
-  private readonly options: WorkerOptions
   private running = false
   private timer: ReturnType<typeof setTimeout> | null = null
   private wakeSleep: (() => void) | null = null
-
-  constructor(options: WorkerOptions) {
-    this.options = options
-  }
 
   start() {
     if (this.running) return
@@ -61,7 +52,10 @@ export class Worker {
         console.log(`[worker] trace#${trace.id} 完成`)
 
         if (result) {
-          await this.options.replyToMessage(trace.message_id, result)
+          triggerHooks(Hooks.AGENT_MESSAGE, trace.thread_id, {
+            messageId: trace.message_id,
+            text: result
+          })
         }
       } catch (err) {
         updateTraceStatus(trace.id, "processing", "failed")

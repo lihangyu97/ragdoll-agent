@@ -4,15 +4,7 @@ import { initSchema } from "@sqlite/schema"
 
 export default class Application {
   private readonly lark = new LarkClient()
-  private readonly worker: Worker
-
-  constructor() {
-    this.worker = new Worker({
-      replyToMessage: async (messageId, text) => {
-        await this.lark.replyToMessage(messageId, text)
-      }
-    })
-  }
+  private readonly worker = new Worker()
 
   /** 启动飞书长连接 + Worker */
   async start(): Promise<void> {
