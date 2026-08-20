@@ -1,17 +1,29 @@
 import { LarkClient } from "@channels/lark"
+import { Worker } from "@worker/index"
 
 export default class Application {
   private readonly lark = new LarkClient()
+  private readonly worker: Worker
 
-  /** 启动飞书长连接（消息处理在 lark 客户端内部） */
+  constructor() {
+    this.worker = new Worker({
+      replyToMessage: async (messageId, text) => {
+        await this.lark.replyToMessage(messageId, text)
+      }
+    })
+  }
+
+  /** 启动飞书长连接 + Worker */
   async start(): Promise<void> {
     this.bindProcessSignals()
 
+    this.worker.start()
     await this.lark.start()
   }
 
-  /** 关闭长连接 */
+  /** 关闭长连接和 Worker */
   close(): void {
+    this.worker.stop()
     this.lark.close()
   }
 

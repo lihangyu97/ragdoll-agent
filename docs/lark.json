@@ -1,0 +1,40 @@
+{
+  "scopes": {
+    "tenant": [
+      "cardkit:card:write",
+      "contact:contact.base:readonly",
+      "contact:user.base:readonly",
+      "contact:user.email:readonly",
+      "docx:document",
+      "docx:document.block:convert",
+      "docx:document:readonly",
+      "im:app_feed_card:write",
+      "im:chat",
+      "im:message",
+      "im:message.group_at_msg.include_bot:readonly",
+      "im:message.group_at_msg:readonly",
+      "im:message.p2p_msg:readonly",
+      "im:message.reactions:read",
+      "im:message.reactions:write_only",
+      "im:message:readonly",
+      "im:message:send_as_bot",
+      "wiki:node:read",
+      "wiki:wiki",
+      "wiki:wiki:readonly"
+    ],
+    "user": [
+      "contact:user.base:readonly",
+      "contact:user.email:readonly",
+      "contact:user.employee_id:readonly",
+      "docx:document",
+      "docx:document:readonly",
+      "drive:drive",
+      "drive:drive.metadata:readonly",
+      "drive:file.meta.sec_label.read_only",
+      "search:bot",
+      "wiki:node:read",
+      "wiki:wiki",
+      "wiki:wiki:readonly"
+    ]
+  }
+}

@@ -23,7 +23,8 @@
       "@channels/*": ["./src/channels/*"],
       "@config/*": ["./src/config/*"],
       "@sqlite/*": ["./src/sqlite/*"],
-      "@toy/*": ["./src/toy/*"]
+      "@toy/*": ["./src/toy/*"],
+      "@worker/*": ["./src/worker/*"]
     }
   },
   "include": ["src/**/*.ts"]

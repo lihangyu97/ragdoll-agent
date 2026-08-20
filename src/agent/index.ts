@@ -1,3 +1,4 @@
+import { AIMessage } from "@langchain/core/messages"
 import { ChatOpenAI } from "@langchain/openai"
 import { createAgent } from "langchain"
 import { API_KEY, BASE_URL, MODEL } from "@config/agent"
@@ -26,7 +27,8 @@ export const agent = createAgent({
 })
 
 // 运行 agent：thread_id 隔离会话，同一 thread 连续调用会延续历史对话
-export async function run(input: string, options?: { threadId?: string }) {
+// 返回 agent 最终回复的文本
+export async function run(input: string, options?: { threadId?: string }): Promise<string> {
   const threadId = options?.threadId ?? `${Date.now()}`
   // 开始一轮 turn（先于 INPUT hook），stream 结束关闭
   agentTurn.beginTurn(threadId)
@@ -37,13 +39,25 @@ export async function run(input: string, options?: { threadId?: string }) {
       { messages: [{ role: "user", content: input }] },
       { streamMode: "updates", ...checkpointer.buildConfig(threadId) }
     )
+
+    // 收集 stream 中最后一个非 tool_call 的 AI Message 作为最终回复
+    let finalAnswer = ""
     for await (const step of stream) {
       for (const [node, update] of Object.entries(step)) {
         for (const msg of update.messages ?? []) {
           triggerHooks(node, threadId, msg)
+          if (
+            AIMessage.isInstance(msg) &&
+            !msg.tool_calls?.length &&
+            typeof msg.content === "string" &&
+            msg.content
+          ) {
+            finalAnswer = msg.content
+          }
         }
       }
     }
+    return finalAnswer
   } finally {
     agentTurn.endTurn()
   }

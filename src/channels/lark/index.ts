@@ -1,12 +1,13 @@
 import * as lark from "@larksuiteoapi/node-sdk"
 import { LARK_APP_ID, LARK_APP_SECRET, LARK_DOMAIN } from "@config/lark"
 import SqliteChannelLark from "@sqlite/ChannelLark"
+import SqliteAgentThreads from "@sqlite/AgentThreads"
 import type { LarkMessage } from "./types"
 import { parseMessageContent } from "./message"
 
 /**
  * 飞书客户端：通过 WebSocket 长连接接收事件推送（im.message.receive_v1），
- * 免公网回调地址。收到消息后自动回复「收到：xxx」。
+ * 免公网回调地址。收到消息后写入 agent_traces 排队，由 Worker 处理。
  */
 export class LarkClient {
   private readonly appId: string
@@ -16,6 +17,7 @@ export class LarkClient {
   private readonly client: lark.Client
   private readonly ws: lark.WSClient
   private readonly channelLark = new SqliteChannelLark()
+  private readonly agentThreads = new SqliteAgentThreads()
   private started = false
 
   constructor() {
@@ -43,16 +45,22 @@ export class LarkClient {
       msg.message.mentions
     )
 
+    // 确定 threadId
+    const threadId = this.resolveThreadId(msg)
+    if (!threadId) return // 不支持的场景，忽略
+
+    const chatId = msg.message.chat_id
+    const messageId = msg.message.message_id
+
+    // 飞书消息落库（日志用途）
     const openId = msg.sender.sender_id?.open_id
     const senderName = openId ? await this.getUserName(openId) : "unknown"
-
-    // 飞书消息落库
     this.channelLark.insert({
       event_type: msg.event_type ?? "",
       app_id: msg.app_id ?? "",
-      chat_id: msg.message.chat_id,
+      chat_id: chatId,
       chat_type: msg.message.chat_type,
-      message_id: msg.message.message_id,
+      message_id: messageId,
       message_type: msg.message.message_type,
       thread_id: msg.message.thread_id ?? null,
       sender_open_id: openId ?? null,
@@ -61,7 +69,23 @@ export class LarkClient {
       content: text
     })
 
-    await this.replyText(msg.message.message_id, `收到：${text}\n发送人：${senderName}`)
+    // 写入 agent 队列
+    this.agentThreads.ensureThread(threadId, msg.message.chat_type, chatId)
+    this.agentThreads.insertTrace(threadId, messageId, chatId, text)
+
+    // 立即回复「思考中」
+    await this.replyToMessage(messageId, "🤔 正在思考中…")
+  }
+
+  // 根据消息确定 threadId，不支持的场景返回 null
+  private resolveThreadId(msg: LarkMessage): string | null {
+    if (msg.message.chat_type === "p2p") {
+      return msg.message.chat_id
+    }
+    if (msg.message.chat_type === "group" && msg.message.thread_id) {
+      return msg.message.thread_id
+    }
+    return null
   }
 
   /**
@@ -90,8 +114,8 @@ export class LarkClient {
     return openId
   }
 
-  /** 回复指定消息（文本） */
-  private async replyText(messageId: string, text: string) {
+  /** 回复指定消息（文本），Worker 处理完成后调用 */
+  async replyToMessage(messageId: string, text: string) {
     return this.client.im.message.reply({
       path: { message_id: messageId },
       data: { content: JSON.stringify({ text }), msg_type: "text" }
