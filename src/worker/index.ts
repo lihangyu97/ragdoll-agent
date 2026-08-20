@@ -1,5 +1,5 @@
 import { run } from "@agent"
-import SqliteAgentThreads from "@sqlite/AgentThreads"
+import { getPendingTrace, updateTraceStatus } from "@sqlite/agentTraces"
 
 export type WorkerOptions = {
   /** 回复飞书消息 */
@@ -11,7 +11,6 @@ export type WorkerOptions = {
  * 调用 agent.run() 处理，完成后标记 done 并通过回调回复。
  */
 export class Worker {
-  private readonly agentThreads = new SqliteAgentThreads()
   private readonly options: WorkerOptions
   private running = false
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -42,7 +41,7 @@ export class Worker {
 
   private async poll() {
     while (this.running) {
-      const trace = this.agentThreads.getPendingTrace()
+      const trace = getPendingTrace()
 
       if (!trace) {
         // 没有待处理消息，等 3s 再查
@@ -51,21 +50,21 @@ export class Worker {
       }
 
       // 原子抢锁：pending → processing，失败说明被其他进程抢走了
-      const locked = this.agentThreads.updateTraceStatus(trace.id, "pending", "processing")
+      const locked = updateTraceStatus(trace.id, "pending", "processing")
       if (!locked) continue
 
       console.log(`[worker] 处理 trace#${trace.id} thread=${trace.thread_id}`)
 
       try {
         const result = await run(trace.input_text, { threadId: trace.thread_id })
-        this.agentThreads.updateTraceStatus(trace.id, "processing", "done")
+        updateTraceStatus(trace.id, "processing", "done")
         console.log(`[worker] trace#${trace.id} 完成`)
 
         if (result) {
           await this.options.replyToMessage(trace.message_id, result)
         }
       } catch (err) {
-        this.agentThreads.updateTraceStatus(trace.id, "processing", "failed")
+        updateTraceStatus(trace.id, "processing", "failed")
         console.error(`[worker] trace#${trace.id} 失败:`, err)
       }
       // 处理完立即查下一条，不等待

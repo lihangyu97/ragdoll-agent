@@ -1,30 +1,13 @@
 import { AIMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages"
 import { trackHook, Hooks } from "@agent/hooks"
-import SqliteBase from "@sqlite/SqliteBase"
+import { getDb } from "./db"
 
-export default class SqliteAgentTurn extends SqliteBase {
+// 通过 hooks 记录 agent 每轮执行轨迹（agent_turns 表，表结构见 schema.ts）
+export default class AgentTurn {
   private turnNo: number | null = null
 
-  protected override createTables() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS agent_turns (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        thread_id TEXT NOT NULL,
-        turn_no INTEGER NOT NULL,
-        hook_type TEXT NOT NULL,
-        node TEXT,
-        msg_type TEXT,
-        tool_call_id TEXT,
-        tool_calls TEXT,
-        content TEXT,
-        tools_result TEXT,
-        created_at TEXT DEFAULT (datetime('now', 'localtime'))
-      )
-    `)
-  }
-
-  // 注册 hook 收集本轮所有输入/决策/结果/回复（基类建表后自动调用）
-  protected override init() {
+  constructor() {
+    // 注册 hook 收集每轮的输入/决策/结果/回复
     trackHook(Hooks.INPUT, (threadId, input) => {
       this.record(Hooks.INPUT, threadId, undefined, input)
     })
@@ -41,7 +24,7 @@ export default class SqliteAgentTurn extends SqliteBase {
 
   // 开始一轮 turn：查该 thread 当前最大轮次，本轮 +1
   beginTurn(threadId: string) {
-    const row = this.db
+    const row = getDb()
       .prepare(`SELECT MAX(turn_no) as max_turn FROM agent_turns WHERE thread_id = ?`)
       .get(threadId) as { max_turn: number | null }
     this.turnNo = (row.max_turn ?? 0) + 1
@@ -62,7 +45,7 @@ export default class SqliteAgentTurn extends SqliteBase {
   ) {
     if (this.turnNo == null) return
     const isToolResult = hookType === Hooks.TOOL_RESULT
-    this.db
+    getDb()
       .prepare(
         `INSERT INTO agent_turns (thread_id, turn_no, hook_type, node, msg_type, tool_call_id, tool_calls, content, tools_result)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`

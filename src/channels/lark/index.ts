@@ -1,7 +1,12 @@
 import * as lark from "@larksuiteoapi/node-sdk"
 import { LARK_APP_ID, LARK_APP_SECRET, LARK_DOMAIN } from "@config/lark"
-import SqliteChannelLark from "@sqlite/ChannelLark"
-import SqliteAgentThreads from "@sqlite/AgentThreads"
+import {
+  insertLarkMessage,
+  getUserName as getCachedUserName,
+  upsertUser
+} from "@sqlite/channelLark"
+import { ensureThread } from "@sqlite/agentThreads"
+import { insertTrace } from "@sqlite/agentTraces"
 import type { LarkMessage } from "./types"
 import { parseMessageContent } from "./message"
 
@@ -16,8 +21,6 @@ export class LarkClient {
   private readonly larkDomain: lark.Domain
   private readonly client: lark.Client
   private readonly ws: lark.WSClient
-  private readonly channelLark = new SqliteChannelLark()
-  private readonly agentThreads = new SqliteAgentThreads()
   private started = false
 
   constructor() {
@@ -55,7 +58,7 @@ export class LarkClient {
     // 飞书消息落库（日志用途）
     const openId = msg.sender.sender_id?.open_id
     const senderName = openId ? await this.getUserName(openId) : "unknown"
-    this.channelLark.insert({
+    insertLarkMessage({
       event_type: msg.event_type ?? "",
       app_id: msg.app_id ?? "",
       chat_id: chatId,
@@ -70,8 +73,8 @@ export class LarkClient {
     })
 
     // 写入 agent 队列
-    this.agentThreads.ensureThread(threadId, msg.message.chat_type, chatId)
-    this.agentThreads.insertTrace(threadId, messageId, chatId, text)
+    ensureThread(threadId, msg.message.chat_type, chatId)
+    insertTrace(threadId, messageId, chatId, text)
 
     // 立即回复「思考中」
     await this.replyToMessage(messageId, "🤔 正在思考中…")
@@ -95,7 +98,7 @@ export class LarkClient {
    * 3. 都失败返回 open_id 兜底，避免影响消息回复。
    */
   private async getUserName(openId: string): Promise<string> {
-    const cached = this.channelLark.getUserName(openId)
+    const cached = getCachedUserName(openId)
     if (cached) return cached
 
     try {
@@ -105,7 +108,7 @@ export class LarkClient {
       })
       const name = res.data?.user?.name
       if (name) {
-        this.channelLark.upsertUser(openId, name)
+        upsertUser(openId, name)
         return name
       }
     } catch (err) {

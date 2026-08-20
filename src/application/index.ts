@@ -1,5 +1,6 @@
 import { LarkClient } from "@channels/lark"
 import { Worker } from "@worker/index"
+import { initSchema } from "@sqlite/schema"
 
 export default class Application {
   private readonly lark = new LarkClient()
@@ -17,6 +18,7 @@ export default class Application {
   async start(): Promise<void> {
     this.bindProcessSignals()
 
+    initSchema()
     this.worker.start()
     await this.lark.start()
   }
