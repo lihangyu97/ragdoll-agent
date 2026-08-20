@@ -7,7 +7,7 @@
  * https://open.feishu.cn/document/server-docs/im-v1/message-content-description/message_content.md
  */
 
-import type { LarkMention } from "./types"
+import type { LarkMention } from './types'
 
 /** post 消息 content 里的单个元素 */
 export type PostElement = {
@@ -43,7 +43,7 @@ function replaceMentions(text: string, mentions?: LarkMention[]): string {
 export function parseTextContent(content: string, mentions?: LarkMention[]): string {
   try {
     const parsed = JSON.parse(content) as { text?: string }
-    return replaceMentions(parsed.text ?? "", mentions)
+    return replaceMentions(parsed.text ?? '', mentions)
   } catch {
     return content
   }
@@ -52,27 +52,27 @@ export function parseTextContent(content: string, mentions?: LarkMention[]): str
 /** post 单个元素 → 文本 */
 function postElementToText(el: PostElement): string {
   switch (el.tag) {
-    case "text":
-    case "a":
-    case "md":
-      return el.text ?? ""
-    case "at":
-    case "mention":
-      return el.user_name ? `@${el.user_name}` : "@"
-    case "img":
-      return "[图片]"
-    case "media":
-      return "[视频]"
-    case "file":
-      return "[文件]"
-    case "emotion":
-      return `[表情:${el.emoji_type ?? "unknown"}]`
-    case "code_block":
-      return el.content ?? el.text ?? ""
-    case "reply":
-      return el.text ?? "[回复]"
+    case 'text':
+    case 'a':
+    case 'md':
+      return el.text ?? ''
+    case 'at':
+    case 'mention':
+      return el.user_name ? `@${el.user_name}` : '@'
+    case 'img':
+      return '[图片]'
+    case 'media':
+      return '[视频]'
+    case 'file':
+      return '[文件]'
+    case 'emotion':
+      return `[表情:${el.emoji_type ?? 'unknown'}]`
+    case 'code_block':
+      return el.content ?? el.text ?? ''
+    case 'reply':
+      return el.text ?? '[回复]'
     default:
-      return el.text ?? ""
+      return el.text ?? ''
   }
 }
 
@@ -88,7 +88,7 @@ export function parsePostContent(content: string): string {
     return content
   }
   const lines = data.content_v2 ?? data.content ?? []
-  const body = lines.map(line => line.map(el => postElementToText(el)).join("")).join("\n")
+  const body = lines.map(line => line.map(el => postElementToText(el)).join('')).join('\n')
   return data.title ? `${data.title}\n${body}` : body
 }
 
@@ -99,9 +99,9 @@ export function parseMessageContent(
   mentions?: LarkMention[]
 ): string {
   switch (messageType) {
-    case "text":
+    case 'text':
       return parseTextContent(content, mentions)
-    case "post":
+    case 'post':
       return parsePostContent(content)
     default:
       return content

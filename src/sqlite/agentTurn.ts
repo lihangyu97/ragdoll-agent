@@ -1,6 +1,6 @@
-import { AIMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages"
-import { trackHook, Hooks } from "@agent/hooks"
-import { getDb } from "./db"
+import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
+import { trackHook, Hooks } from '@agent/hooks'
+import { getDb } from './db'
 
 // 通过 hooks 记录 agent 每轮执行轨迹（agent_turns 表，表结构见 schema.ts）
 export default class AgentTurn {
@@ -68,7 +68,7 @@ export default class AgentTurn {
     if (!msg) return null
     if (ToolMessage.isInstance(msg)) return msg.tool_call_id
     if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
-      return msg.tool_calls.map(call => call.id).join(",")
+      return msg.tool_calls.map(call => call.id).join(',')
     }
     return null
   }

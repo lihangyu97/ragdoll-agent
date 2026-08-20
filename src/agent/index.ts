@@ -1,11 +1,11 @@
-import { ChatOpenAI } from "@langchain/openai"
-import { createAgent } from "langchain"
-import { API_KEY, BASE_URL, MODEL } from "@config/agent"
-import { Hooks, triggerHooks } from "./hooks"
-import Checkpointer from "@sqlite/checkpointer"
-import AgentTurn from "@sqlite/agentTurn"
-import _tools from "@toy/tools"
-import _systemPrompt from "@toy/systemPrompt"
+import { ChatOpenAI } from '@langchain/openai'
+import { createAgent } from 'langchain'
+import { API_KEY, BASE_URL, MODEL } from '@config/agent'
+import { Hooks, triggerHooks } from './hooks'
+import Checkpointer from '@sqlite/checkpointer'
+import AgentTurn from '@sqlite/agentTurn'
+import _tools from '@toy/tools'
+import _systemPrompt from '@toy/systemPrompt'
 
 const model = new ChatOpenAI({
   model: MODEL,
@@ -35,8 +35,8 @@ export async function run(input: string, options?: { threadId?: string }): Promi
     // 收集本次输入（stream 之前）
     triggerHooks(Hooks.INPUT, threadId, input)
     const stream = await agent.stream(
-      { messages: [{ role: "user", content: input }] },
-      { streamMode: "updates", ...checkpointer.buildConfig(threadId) }
+      { messages: [{ role: 'user', content: input }] },
+      { streamMode: 'updates', ...checkpointer.buildConfig(threadId) }
     )
     for await (const step of stream) {
       for (const [node, update] of Object.entries(step)) {

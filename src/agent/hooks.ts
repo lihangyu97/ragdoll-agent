@@ -1,8 +1,8 @@
-import { AIMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages"
+import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
 
 /* ====== 类型 ====== */
 
-export type HookType = "INPUT" | "TOOL_CALL" | "TOOL_RESULT" | "AGENT_RESULT"
+export type HookType = 'INPUT' | 'TOOL_CALL' | 'TOOL_RESULT' | 'AGENT_RESULT'
 
 // 本次调用输入（agent.stream 之前触发）
 type InputHook = (threadId: string, input: string) => void
@@ -20,10 +20,10 @@ type HookMap = {
 /* ====== 运行时 ====== */
 
 export const Hooks: { [K in HookType]: K } = {
-  INPUT: "INPUT",
-  TOOL_CALL: "TOOL_CALL",
-  TOOL_RESULT: "TOOL_RESULT",
-  AGENT_RESULT: "AGENT_RESULT"
+  INPUT: 'INPUT',
+  TOOL_CALL: 'TOOL_CALL',
+  TOOL_RESULT: 'TOOL_RESULT',
+  AGENT_RESULT: 'AGENT_RESULT'
 }
 
 const hooks: { [K in HookType]: HookMap[K][] } = {

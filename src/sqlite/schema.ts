@@ -1,4 +1,4 @@
-import { getDb } from "./db"
+import { getDb } from './db'
 
 /** 启动时统一执行一次，初始化所有表 */
 export function initSchema() {

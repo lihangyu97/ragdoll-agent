@@ -1,4 +1,4 @@
-import { getDb } from "./db"
+import { getDb } from './db'
 
 export type AgentTraceRecord = {
   id: number

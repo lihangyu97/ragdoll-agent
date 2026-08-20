@@ -1,6 +1,6 @@
-import { LarkClient } from "@channels/lark"
-import { Worker } from "@worker/index"
-import { initSchema } from "@sqlite/schema"
+import { LarkClient } from '@channels/lark'
+import { Worker } from '@worker/index'
+import { initSchema } from '@sqlite/schema'
 
 export default class Application {
   private readonly lark = new LarkClient()
@@ -32,7 +32,7 @@ export default class Application {
       process.exit(0)
     }
 
-    process.once("SIGINT", close)
-    process.once("SIGTERM", close)
+    process.once('SIGINT', close)
+    process.once('SIGTERM', close)
   }
 }
