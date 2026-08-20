@@ -15,6 +15,7 @@ export class Worker {
   private readonly options: WorkerOptions
   private running = false
   private timer: ReturnType<typeof setTimeout> | null = null
+  private wakeSleep: (() => void) | null = null
 
   constructor(options: WorkerOptions) {
     this.options = options
@@ -33,6 +34,9 @@ export class Worker {
       clearTimeout(this.timer)
       this.timer = null
     }
+    // 唤醒可能正在 sleep 的 poll 循环，让它回到 while 顶部检查 running 后退出
+    this.wakeSleep?.()
+    this.wakeSleep = null
     console.log("[worker] 停止")
   }
 
@@ -70,7 +74,12 @@ export class Worker {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => {
-      this.timer = setTimeout(resolve, ms)
+      this.wakeSleep = resolve
+      this.timer = setTimeout(() => {
+        this.timer = null
+        this.wakeSleep = null
+        resolve()
+      }, ms)
     })
   }
 }
