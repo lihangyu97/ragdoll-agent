@@ -1,4 +1,6 @@
 import { getDb } from './db'
+import { THREAD_STATUS } from './agentThreads'
+import { TRACE_STATUS } from './agentTraces'
 
 /** 启动时统一执行一次，初始化所有表 */
 export function initSchema() {
@@ -54,7 +56,7 @@ export function initSchema() {
       chat_type       TEXT NOT NULL,
       chat_id         TEXT NOT NULL,
       sender_open_id  TEXT,
-      status          TEXT NOT NULL DEFAULT 'active',
+      status          TEXT NOT NULL DEFAULT '${THREAD_STATUS.ACTIVE}',
       created_at      TEXT DEFAULT (datetime('now', 'localtime')),
       updated_at      TEXT DEFAULT (datetime('now', 'localtime'))
     )
@@ -67,7 +69,7 @@ export function initSchema() {
       message_id  TEXT NOT NULL,
       chat_id     TEXT NOT NULL,
       input_text  TEXT NOT NULL,
-      status      TEXT NOT NULL DEFAULT 'pending',
+      status      TEXT NOT NULL DEFAULT '${TRACE_STATUS.PENDING}',
       created_at  TEXT DEFAULT (datetime('now', 'localtime')),
       updated_at  TEXT DEFAULT (datetime('now', 'localtime'))
     )

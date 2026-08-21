@@ -6,8 +6,7 @@ export default class Application {
   private readonly lark = new LarkClient()
   private readonly worker = new Worker()
 
-  /** 启动飞书长连接 + Worker */
-  async start(): Promise<void> {
+  public async start(): Promise<void> {
     this.bindProcessSignals()
 
     initSchema()
@@ -15,8 +14,7 @@ export default class Application {
     await this.lark.start()
   }
 
-  /** 关闭长连接和 Worker */
-  close(): void {
+  private close(): void {
     this.worker.stop()
     this.lark.close()
   }

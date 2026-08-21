@@ -1,6 +1,6 @@
 import { run } from '@agent'
-import { getPendingTrace, updateTraceStatus } from '@sqlite/agentTraces'
-import { logger } from '@logger/index'
+import { getPendingTrace, updateTraceStatus, TRACE_STATUS } from '@sqlite/agentTraces'
+import logger from '@logger'
 import { threadContext } from '@logger/context'
 
 /**
@@ -15,7 +15,6 @@ export class Worker {
   start() {
     if (this.running) return
     this.running = true
-    console.log('[worker] 启动')
     this.poll()
   }
 
@@ -28,7 +27,6 @@ export class Worker {
     // 唤醒可能正在 sleep 的 poll 循环，让它回到 while 顶部检查 running 后退出
     this.wakeSleep?.()
     this.wakeSleep = null
-    console.log('[worker] 停止')
   }
 
   private async poll() {
@@ -36,30 +34,28 @@ export class Worker {
       const trace = getPendingTrace()
 
       if (!trace) {
-        // 没有待处理消息，等 3s 再查
         await this.sleep(3000)
         continue
       }
 
       // 原子抢锁：pending → processing，失败说明被其他进程抢走了
-      const locked = updateTraceStatus(trace.id, 'pending', 'processing')
+      const locked = updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
       if (!locked) continue
 
-      console.log(`[worker] 处理 trace#${trace.id} thread=${trace.thread_id}`)
+      logger.info(`[worker] 开始处理: ${trace.thread_id}`)
 
-      // 整个处理链路包进 threadId 上下文，logger 自动关联
+      // logger 自动关联 threadId
       await threadContext.run(trace.thread_id, async () => {
         try {
-          await run(trace.input_text, { threadId: trace.thread_id })
-          updateTraceStatus(trace.id, 'processing', 'done')
-          console.log(`[worker] trace#${trace.id} 完成`)
+          await run(trace.input_text, trace.thread_id)
+
+          updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
+          logger.info(`[worker] agent run done: ${trace.thread_id}`)
         } catch (err) {
-          updateTraceStatus(trace.id, 'processing', 'failed')
-          logger.error(`[worker] trace#${trace.id} 失败`, err)
-          console.error(`[worker] trace#${trace.id} 失败:`, err)
+          updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
+          logger.error(`[worker] agent run fail: ${trace.thread_id}`, err)
         }
       })
-      // 处理完立即查下一条，不等待
     }
   }
 

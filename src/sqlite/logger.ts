@@ -1,6 +1,5 @@
 import { getDb } from './db'
 
-/** 写入一条日志记录 */
 export function insertLog(
   level: string,
   message: string,

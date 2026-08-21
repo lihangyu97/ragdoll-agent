@@ -4,6 +4,7 @@ import { API_KEY, BASE_URL, MODEL } from '@config/agent'
 import { Hooks, triggerHooks } from './hooks'
 import Checkpointer from '@sqlite/checkpointer'
 import AgentTurn from '@sqlite/agentTurn'
+import logger from '@logger'
 import _tools from '@toy/tools'
 import _systemPrompt from '@toy/systemPrompt'
 
@@ -25,15 +26,11 @@ export const agent = createAgent({
   checkpointer: checkpointer.getCheckpointer()
 })
 
-// 运行 agent：thread_id 隔离会话，同一 thread 连续调用会延续历史对话
-// 最终回复通过 AGENT_RESULT hook 广播，订阅方（如 LarkClient）负责发送
-export async function run(input: string, options?: { threadId?: string }): Promise<void> {
-  const threadId = options?.threadId ?? `${Date.now()}`
-  // 开始一轮 turn（先于 INPUT hook），stream 结束关闭
-  agentTurn.beginTurn(threadId)
+export async function run(input: string, threadId: string): Promise<void> {
   try {
-    // 收集本次输入（stream 之前）
+    agentTurn.beginTurn(threadId)
     triggerHooks(Hooks.INPUT, threadId, input)
+
     const stream = await agent.stream(
       { messages: [{ role: 'user', content: input }] },
       { streamMode: 'updates', ...checkpointer.buildConfig(threadId) }

@@ -1,16 +1,45 @@
 /**
  * 飞书消息 content 解析工具。
- *
- * 官方 SDK（@larksuiteoapi/node-sdk）只提供原始 content 字符串，不做「转纯文本」，
- * 各家 bot 框架（如 nanobot、LangBot）都是按 msg_type 手写解析，这里同款做法。
  * 各类型 content 的 JSON 结构见官方文档：
  * https://open.feishu.cn/document/server-docs/im-v1/message-content-description/message_content.md
  */
 
-import type { LarkMention } from './types'
+/** im.message.receive_v1 事件里我们关心的字段（SDK 完整类型见 EventHandles） */
+export interface LarkMessage {
+  event_id?: string
+  event_type?: string
+  app_id?: string
+  tenant_key?: string
+  sender: {
+    sender_id?: { union_id?: string; user_id?: string; open_id?: string }
+    sender_type: string
+    tenant_key?: string
+  }
+  message: {
+    message_id: string
+    chat_id: string
+    chat_type: string
+    message_type: string
+    content: string
+    create_time: string
+    thread_id?: string
+    mentions?: LarkMention[]
+  }
+}
+
+/** 消息里的提及（text 消息正文里的 @_user_1 就是 key 占位符） */
+interface LarkMention {
+  key: string
+  id: {
+    union_id?: string
+    user_id?: string
+    open_id?: string
+  }
+  name: string
+}
 
 /** post 消息 content 里的单个元素 */
-export type PostElement = {
+interface PostElement {
   tag: string
   text?: string
   href?: string
@@ -23,7 +52,7 @@ export type PostElement = {
 }
 
 /** post 消息 content 解析后的结构（content / content_v2 是「行」数组，每行是元素数组） */
-export type PostContent = {
+interface PostContent {
   title?: string
   content?: PostElement[][]
   content_v2?: PostElement[][]

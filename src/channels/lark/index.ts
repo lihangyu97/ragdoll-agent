@@ -8,14 +8,9 @@ import {
 import { ensureThread } from '@sqlite/agentThreads'
 import { insertTrace, getLatestProcessingTrace } from '@sqlite/agentTraces'
 import { Hooks, trackHook } from '@agent/hooks'
-import type { LarkMessage } from './types'
-import { parseMessageContent } from './message'
+import logger, { stringify } from '@logger'
+import { type LarkMessage, parseMessageContent } from './message'
 
-/**
- * 飞书客户端：通过 WebSocket 长连接接收事件推送（im.message.receive_v1），
- * 免公网回调地址。收到消息后写入 agent_traces 排队，由 Worker 处理；
- * 订阅 AGENT_RESULT hook，把 agent 最终回复发回飞书。
- */
 export class LarkClient {
   private readonly appId: string
   private readonly appSecret: string
@@ -41,9 +36,31 @@ export class LarkClient {
     this.trackAgentResults()
   }
 
-  /** 收到消息的处理逻辑 */
+  async start(): Promise<void> {
+    if (this.started) return
+    this.started = true
+
+    const dispatcher = new lark.EventDispatcher({
+      loggerLevel: this.loggerLevel
+    }).register({
+      'im.message.receive_v1': data => {
+        if (data.sender.sender_type === 'app') return
+        return this.handleMessage(data)
+      }
+    })
+
+    await this.ws.start({ eventDispatcher: dispatcher })
+  }
+
+  close(): void {
+    this.ws.close()
+    this.started = false
+  }
+
+  // 收到消息
   private async handleMessage(msg: LarkMessage): Promise<void> {
-    console.log(`🔥 msg ===>`, JSON.stringify(msg), `<=== 🔥`)
+    const stringifyMsg = stringify(msg)
+    console.log('🤖 收到飞书消息: ', stringifyMsg)
 
     const text = parseMessageContent(
       msg.message.message_type,
@@ -51,16 +68,18 @@ export class LarkClient {
       msg.message.mentions
     )
 
-    // 确定 threadId
     const threadId = this.resolveThreadId(msg)
-    if (!threadId) return // 不支持的场景，忽略
+    if (!threadId) {
+      logger.error('无 threadId 无法确认场景', stringifyMsg)
+      return
+    }
 
     const chatId = msg.message.chat_id
     const messageId = msg.message.message_id
-
-    // 飞书消息落库（日志用途）
     const openId = msg.sender.sender_id?.open_id
+
     const senderName = openId ? await this.getUserName(openId) : 'unknown'
+
     insertLarkMessage({
       event_type: msg.event_type ?? '',
       app_id: msg.app_id ?? '',
@@ -79,26 +98,24 @@ export class LarkClient {
     ensureThread(threadId, msg.message.chat_type, chatId, openId ?? null)
     insertTrace(threadId, messageId, chatId, text)
 
-    // 立即回复「思考中」
+    // 立即回复
     await this.replyToMessage(messageId, '🤔 正在思考中…')
   }
 
-  // 订阅 AGENT_RESULT：agent 最终回复触发时，按 threadId 反查 processing 的 trace 拿到 message_id 回复
   private trackAgentResults() {
     trackHook(Hooks.AGENT_RESULT, (threadId, msg) => {
       if (typeof msg.content !== 'string' || !msg.content) {
-        console.error('消息格式异常', 'msg')
+        logger.error('[lark] 消息格式异常: ', { threadId, msg })
         return
       }
       const trace = getLatestProcessingTrace(threadId)
       if (!trace) return
       this.replyToMessage(trace.message_id, msg.content).catch(err =>
-        console.error(`[lark] 回复失败（messageId=${trace.message_id}）：`, err)
+        logger.error('[lark] 回复失败: ', { threadId, error: stringify(err) })
       )
     })
   }
 
-  // 根据消息确定 threadId，不支持的场景返回 null
   private resolveThreadId(msg: LarkMessage): string | null {
     if (msg.message.chat_type === 'p2p') {
       return msg.message.chat_id
@@ -106,15 +123,10 @@ export class LarkClient {
     if (msg.message.chat_type === 'group' && msg.message.thread_id) {
       return msg.message.thread_id
     }
-    return null
+
+    return null // 不支持的场景
   }
 
-  /**
-   * 通过 open_id 获取用户名：
-   * 1. 先查 channel_lark_user 表，命中直接返回；
-   * 2. 没有再调飞书通讯录接口（contact.v3.user.get），查到后写库；
-   * 3. 都失败返回 open_id 兜底，避免影响消息回复。
-   */
   private async getUserName(openId: string): Promise<string> {
     const cached = getCachedUserName(openId)
     if (cached) return cached
@@ -130,7 +142,7 @@ export class LarkClient {
         return name
       }
     } catch (err) {
-      console.error(`[lark] 获取用户信息失败（open_id=${openId}）：`, err)
+      logger.error('[lark] 获取用户信息失败: ', err)
     }
     return openId
   }
@@ -176,30 +188,6 @@ export class LarkClient {
       onReconnecting: () => console.warn('[lark] 连接断开，正在重连…'),
       onReconnected: () => console.log('[lark] 重连成功')
     })
-  }
-
-  /** 启动长连接，开始接收并处理消息（只会启动一次） */
-  async start(): Promise<void> {
-    if (this.started) return
-    this.started = true
-
-    const dispatcher = new lark.EventDispatcher({
-      loggerLevel: lark.LoggerLevel.info
-    }).register({
-      'im.message.receive_v1': data => {
-        // 忽略机器人自己发出的消息（例如群聊里回复触发的接收）
-        if (data.sender.sender_type === 'app') return
-        return this.handleMessage(data)
-      }
-    })
-
-    await this.ws.start({ eventDispatcher: dispatcher })
-  }
-
-  /** 关闭长连接 */
-  close(): void {
-    this.ws.close()
-    this.started = false
   }
 }
 
