@@ -1,8 +1,11 @@
 import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
-import { trackHook, Hooks } from '@agent/hooks'
-import { getDb } from './db'
+import { trackHook, Hooks } from './hooks'
+import { getMaxTurnNo, insertTurn } from '@sqlite/agentTurns'
 
-// 通过 hooks 记录 agent 每轮执行轨迹（agent_turns 表，表结构见 schema.ts）
+/**
+ * Agent 每轮执行的轨迹记录器（数据操作见 @sqlite/agentTurns）。
+ * 通过 hooks 收集每轮的输入/决策/结果/回复，写入 agent_turns 表。
+ */
 export default class AgentTurn {
   private turnNo: number | null = null
 
@@ -24,10 +27,7 @@ export default class AgentTurn {
 
   // 开始一轮 turn：查该 thread 当前最大轮次，本轮 +1
   beginTurn(threadId: string) {
-    const row = getDb()
-      .prepare(`SELECT MAX(turn_no) as max_turn FROM agent_turns WHERE thread_id = ?`)
-      .get(threadId) as { max_turn: number | null }
-    this.turnNo = (row.max_turn ?? 0) + 1
+    this.turnNo = getMaxTurnNo(threadId) + 1
   }
 
   // 结束本轮 turn，防止后续无关消息误写入
@@ -45,22 +45,18 @@ export default class AgentTurn {
   ) {
     if (this.turnNo == null) return
     const isToolResult = hookType === Hooks.TOOL_RESULT
-    getDb()
-      .prepare(
-        `INSERT INTO agent_turns (thread_id, turn_no, hook_type, node, msg_type, tool_call_id, tool_calls, content, tools_result)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        threadId,
-        this.turnNo,
-        hookType,
-        node ?? null,
-        msg?.type ?? null,
-        this.extractToolCallId(msg),
+    insertTurn({
+      thread_id: threadId,
+      turn_no: this.turnNo,
+      hook_type: hookType,
+      node: node ?? null,
+      msg_type: msg?.type ?? null,
+      tool_call_id: this.extractToolCallId(msg),
+      tool_calls:
         AIMessage.isInstance(msg) && msg.tool_calls?.length ? JSON.stringify(msg.tool_calls) : null,
-        isToolResult ? null : content || null,
-        isToolResult ? content || null : null
-      )
+      content: isToolResult ? null : content || null,
+      tools_result: isToolResult ? content || null : null
+    })
   }
 
   // 提取工具调用 id：ToolMessage 直接取；AIMessage（TOOL_CALL 决策）取全部调用 id（并行时多个，逗号拼接）
