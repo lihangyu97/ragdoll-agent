@@ -1,4 +1,4 @@
-import { getDb } from './db'
+import { safeGet, safeRun } from './base/safe'
 
 /** agent_traces.status：消息执行轨迹状态（唯一事实来源，禁止魔法字符串） */
 export const TRACE_STATUS = {
@@ -31,37 +31,33 @@ export function insertTrace(
   chatId: string,
   inputText: string
 ) {
-  getDb()
-    .prepare(
-      `INSERT INTO agent_traces (thread_id, message_id, chat_id, input_text)
-       VALUES (?, ?, ?, ?)`
-    )
-    .run(threadId, messageId, chatId, inputText)
+  safeRun(
+    `INSERT INTO agent_traces (thread_id, message_id, chat_id, input_text)
+     VALUES (?, ?, ?, ?)`,
+    [threadId, messageId, chatId, inputText]
+  )
 }
 
 /** 取最早一条 pending 的 trace */
 export function getPendingTrace(): AgentTraceRecord | null {
-  const row = getDb()
-    .prepare(
-      `SELECT * FROM agent_traces
-       WHERE status = '${TRACE_STATUS.PENDING}'
-       ORDER BY created_at ASC
-       LIMIT 1`
-    )
-    .get() as AgentTraceRecord | undefined
+  const row = safeGet<AgentTraceRecord>(
+    `SELECT * FROM agent_traces
+     WHERE status = '${TRACE_STATUS.PENDING}'
+     ORDER BY created_at ASC
+     LIMIT 1`
+  )
   return row ?? null
 }
 
 /** 取某 thread 最新一条 processing 的 trace（AGENT_RESULT 触发时 worker 尚未标记 done） */
 export function getLatestProcessingTrace(threadId: string): AgentTraceRecord | null {
-  const row = getDb()
-    .prepare(
-      `SELECT * FROM agent_traces
-       WHERE thread_id = ? AND status = '${TRACE_STATUS.PROCESSING}'
-       ORDER BY created_at DESC
-       LIMIT 1`
-    )
-    .get(threadId) as AgentTraceRecord | undefined
+  const row = safeGet<AgentTraceRecord>(
+    `SELECT * FROM agent_traces
+     WHERE thread_id = ? AND status = '${TRACE_STATUS.PROCESSING}'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [threadId]
+  )
   return row ?? null
 }
 
@@ -71,12 +67,11 @@ export function updateTraceStatus(
   fromStatus: TraceStatus,
   toStatus: TraceStatus
 ): boolean {
-  const result = getDb()
-    .prepare(
-      `UPDATE agent_traces
-       SET status = ?, updated_at = datetime('now', 'localtime')
-       WHERE id = ? AND status = ?`
-    )
-    .run(toStatus, id, fromStatus)
-  return result.changes > 0
+  const changes = safeRun(
+    `UPDATE agent_traces
+     SET status = ?, updated_at = datetime('now', 'localtime')
+     WHERE id = ? AND status = ?`,
+    [toStatus, id, fromStatus]
+  )
+  return changes > 0
 }

@@ -1,4 +1,4 @@
-import { getDb } from './db'
+import { safeRun } from './base/safe'
 
 /** agent_threads.status：会话线程状态（唯一事实来源，禁止魔法字符串） */
 export const THREAD_STATUS = {
@@ -25,10 +25,9 @@ export function ensureThread(
   chatId: string,
   senderOpenId: string | null
 ) {
-  getDb()
-    .prepare(
-      `INSERT OR IGNORE INTO agent_threads (thread_id, chat_type, chat_id, sender_open_id)
-       VALUES (?, ?, ?, ?)`
-    )
-    .run(threadId, chatType, chatId, senderOpenId)
+  safeRun(
+    `INSERT OR IGNORE INTO agent_threads (thread_id, chat_type, chat_id, sender_open_id)
+     VALUES (?, ?, ?, ?)`,
+    [threadId, chatType, chatId, senderOpenId]
+  )
 }

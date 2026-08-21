@@ -1,6 +1,6 @@
 import { getDb } from './db'
-import { THREAD_STATUS } from './agentThreads'
-import { TRACE_STATUS } from './agentTraces'
+import { THREAD_STATUS } from '../agentThreads'
+import { TRACE_STATUS } from '../agentTraces'
 
 /** 启动时统一执行一次，初始化所有表 */
 export function initSchema() {

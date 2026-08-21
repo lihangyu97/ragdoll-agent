@@ -2,19 +2,20 @@ import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messag
 
 /* ====== 类型 ====== */
 
-export type HookType = 'INPUT' | 'TOOL_CALL' | 'TOOL_RESULT' | 'AGENT_RESULT'
+export type HookType = 'INPUT' | 'TOOL_CALL' | 'TOOL_RESULT' | 'AGENT_RESULT' | 'AGENT_ERROR'
 
-// 本次调用输入（agent.stream 之前触发）
 type InputHook = (threadId: string, input: string) => void
 type ToolCallHook = (threadId: string, msg: AIMessage, node: string) => void
 type ToolResultHook = (threadId: string, msg: ToolMessage, node: string) => void
 type MessageHook = (threadId: string, msg: BaseMessage, node: string) => void
+type ErrorHook = (threadId: string, error: string) => void
 
 type HookMap = {
   INPUT: InputHook
   TOOL_CALL: ToolCallHook
   TOOL_RESULT: ToolResultHook
   AGENT_RESULT: MessageHook
+  AGENT_ERROR: ErrorHook
 }
 
 /* ====== 运行时 ====== */
@@ -23,14 +24,16 @@ export const Hooks: { [K in HookType]: K } = {
   INPUT: 'INPUT',
   TOOL_CALL: 'TOOL_CALL',
   TOOL_RESULT: 'TOOL_RESULT',
-  AGENT_RESULT: 'AGENT_RESULT'
+  AGENT_RESULT: 'AGENT_RESULT',
+  AGENT_ERROR: 'AGENT_ERROR'
 }
 
 const hooks: { [K in HookType]: HookMap[K][] } = {
   [Hooks.INPUT]: [],
   [Hooks.TOOL_CALL]: [],
   [Hooks.TOOL_RESULT]: [],
-  [Hooks.AGENT_RESULT]: []
+  [Hooks.AGENT_RESULT]: [],
+  [Hooks.AGENT_ERROR]: []
 }
 
 export function trackHook<K extends HookType>(type: K, handler: HookMap[K]) {

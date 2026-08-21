@@ -1,4 +1,4 @@
-import { initSchema } from '@sqlite/schema'
+import { initSchema } from '@sqlite/base/schema'
 import { upsertUser } from '@sqlite/channelLark'
 
 /**

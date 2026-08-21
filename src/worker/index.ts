@@ -1,6 +1,7 @@
 import { run } from '@agent'
+import { Hooks, triggerHooks } from '@agent/hooks'
 import { getPendingTrace, updateTraceStatus, TRACE_STATUS } from '@sqlite/agentTraces'
-import logger from '@logger'
+import logger, { stringify } from '@logger'
 import { threadContext } from '@logger/context'
 
 /**
@@ -52,6 +53,8 @@ export class Worker {
           updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
           logger.info(`[worker] agent run done: ${trace.thread_id}`)
         } catch (err) {
+          // 先广播错误（此时 trace 仍是 processing，订阅方可反查 message_id 回传），再标记失败
+          triggerHooks(Hooks.AGENT_ERROR, trace.thread_id, stringify(err))
           updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
           logger.error(`[worker] agent run fail: ${trace.thread_id}`, err)
         }

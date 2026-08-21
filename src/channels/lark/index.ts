@@ -45,7 +45,7 @@ export class LarkClient {
     }).register({
       'im.message.receive_v1': data => {
         if (data.sender.sender_type === 'app') return
-        return this.handleMessage(data)
+        return this.handleMessage(data).catch(err => this.handleMessageError(data, err))
       }
     })
 
@@ -102,6 +102,13 @@ export class LarkClient {
     await this.replyToMessage(messageId, '🤔 正在思考中…')
   }
 
+  private handleMessageError(msg: LarkMessage, err: unknown): void {
+    logger.error('[lark] 消息处理失败: ', err)
+    this.replyToMessage(msg.message.message_id, `⚠️ 处理失败：${stringify(err)}`).catch(replyErr =>
+      logger.error('[lark] 错误回复失败: ', { error: stringify(replyErr) })
+    )
+  }
+
   private trackAgentResults() {
     trackHook(Hooks.AGENT_RESULT, (threadId, msg) => {
       if (typeof msg.content !== 'string' || !msg.content) {
@@ -112,6 +119,14 @@ export class LarkClient {
       if (!trace) return
       this.replyToMessage(trace.message_id, msg.content).catch(err =>
         logger.error('[lark] 回复失败: ', { threadId, error: stringify(err) })
+      )
+    })
+
+    trackHook(Hooks.AGENT_ERROR, (threadId, error) => {
+      const trace = getLatestProcessingTrace(threadId)
+      if (!trace) return
+      this.replyToMessage(trace.message_id, `⚠️ Agent 处理失败：${error}`).catch(err =>
+        logger.error('[lark] 错误回复失败: ', { threadId, error: stringify(err) })
       )
     })
   }

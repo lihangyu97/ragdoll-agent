@@ -1,6 +1,6 @@
 import { LarkClient } from '@channels/lark'
 import { Worker } from '@worker/index'
-import { initSchema } from '@sqlite/schema'
+import { initSchema } from '@sqlite/base/schema'
 
 export default class Application {
   private readonly lark = new LarkClient()
