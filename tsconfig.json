@@ -30,5 +30,5 @@
       "@logger/*": ["./src/logger/*"]
     }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts"]
 }

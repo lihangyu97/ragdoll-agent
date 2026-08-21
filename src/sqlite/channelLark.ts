@@ -16,26 +16,30 @@ export type ChannelLarkRecord = {
 
 /** 写入一条飞书消息记录 */
 export function insertLarkMessage(record: ChannelLarkRecord) {
-  getDb()
-    .prepare(
-      `INSERT INTO channel_lark
+  try {
+    getDb()
+      .prepare(
+        `INSERT INTO channel_lark
        (event_type, app_id, chat_id, chat_type, message_id, message_type,
         thread_id, sender_open_id, sender_type, sender_name, content)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      record.event_type,
-      record.app_id,
-      record.chat_id,
-      record.chat_type,
-      record.message_id,
-      record.message_type,
-      record.thread_id,
-      record.sender_open_id,
-      record.sender_type,
-      record.sender_name,
-      record.content
-    )
+      )
+      .run(
+        record.event_type,
+        record.app_id,
+        record.chat_id,
+        record.chat_type,
+        record.message_id,
+        record.message_type,
+        record.thread_id,
+        record.sender_open_id,
+        record.sender_type,
+        record.sender_name,
+        record.content
+      )
+  } catch (error) {
+    console.log(`🔥 error ===>`, error, `<=== 🔥`)
+  }
 }
 
 /** 按 open_id 查用户名，找不到返回 null */
