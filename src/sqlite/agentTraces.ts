@@ -75,3 +75,12 @@ export function updateTraceStatus(
   )
   return changes > 0
 }
+
+/** worker 启动时调用：把上次进程遗留的 processing 记录重置回 pending（进程崩溃/重启后无主），返回重置条数 */
+export function resetStaleProcessingTraces(): number {
+  return safeRun(
+    `UPDATE agent_traces
+     SET status = '${TRACE_STATUS.PENDING}', updated_at = datetime('now', 'localtime')
+     WHERE status = '${TRACE_STATUS.PROCESSING}'`
+  )
+}

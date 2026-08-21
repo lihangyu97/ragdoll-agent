@@ -8,15 +8,22 @@
 之前所有查询函数都没包 try/catch，一旦触发就是 unhandled rejection → Node 24 默认崩进程。
 （曾出现真实报错：旧库 `agent_threads` 表缺 `sender_open_id` 列，`ensureThread` 插入时 throw。）
 
+**环境事实（实测确认）**：Node 24 的 `node:sqlite` **默认开启外键约束**（`PRAGMA foreign_keys = 1`），
+违反 `REFERENCES` 会报 `errcode=787`（FOREIGN KEY constraint failed）。此前"FK 约束没开所以不会报"的认知有误。
+生产路径已按 FK 安全（`ensureThread` 先于 `insertTrace`）；注意：直接往 `agent_traces` 插不存在的 thread_id、
+或删除仍有 traces 引用的 `agent_threads` 记录，都会被 FK 拦截报错。
+
 **已实现（最终方案）**：
 
 - [x] 新增 `src/sqlite/safe.ts`：`safeRun` / `safeGet` / `safeAll` + `classifySqliteError`
   - 策略：出错 → 记完整日志（SQL 摘要 / 参数 / errcode / threadId）→ **rethrow**（所有错误都中断，不做降级/重试）
-  - 错误分级：`schema`（errcode=1 系）/ `constraint`（19xx 系）/ `resource`（5/6/8/10/11/13/14）/ `unknown`
+  - 错误分级：`schema`（errcode=1 系）/ `constraint`（19xx 系，含 FK 787）/ `resource`（5/6/8/10/11/13/14）/ `unknown`
 - [x] 数据模块全部换用 safe 函数：`agentTraces` / `agentThreads` / `agentTurns` / `channelLark`
 - [x] `sqlite/logger.ts` 例外：不走 safe，写失败 console 兜底 —— 日志写入失败不能反过来中断业务
 - [x] 飞书回传：`lark.handleMessage` 包 try/catch，sql 报错即中断流程并回复 `⚠️ 处理失败：...`（友好信息；完整错误进 logger 表）
 - [x] agent 运行错误回传：`hooks.ts` 扩展 `AGENT_ERROR` 事件，worker catch 里先广播（trace 仍为 processing，lark 可反查 message_id）再标 failed；lark 订阅后回复 `⚠️ Agent 处理失败：...`
+- [x] LLM 超时：单次请求 60s + `maxRetries: 2`（`ChatOpenAI`）；`run()` 整体 5 分钟 AbortController 超时（`signal` 传入 `agent.stream`，超时 → AbortError → trace failed + 飞书回传）
+- [x] worker 兜底：`poll()` 循环 try/catch（sql 报错不崩循环）+ 启动时 `resetStaleProcessingTraces()` 重置孤儿 processing 记录
 
 **尚未做**：
 
