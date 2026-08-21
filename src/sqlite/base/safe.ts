@@ -25,12 +25,12 @@ export function classifySqliteError(err: unknown): SqliteErrorInfo {
 
   let kind: SqliteErrorKind
   if (code == null) kind = 'unknown'
-  // SQLITE_ERROR(1) 系：语法错误 / no such table / no such column 等结构问题
+  // 低 8 位是主错误码：1 = SQLITE_ERROR（语法/表不存在等结构问题）
   else if ((code & 0xff) === 1) kind = 'schema'
-  // SQLITE_CONSTRAINT 扩展码（2067 UNIQUE / 1299 NOT NULL / 275 CHECK / 787 FK）
-  else if (code >= 1900 && code < 2000) kind = 'constraint'
-  // 资源类：5 BUSY / 6 LOCKED / 13 FULL / 10 IOERR / 14 CANTOPEN / 8 READONLY / 11 CORRUPT
-  else if ([5, 6, 8, 10, 11, 13, 14].includes(code)) kind = 'resource'
+  // 19 = SQLITE_CONSTRAINT 主码（扩展码低 8 位，如 787 FK / 1299 NOT NULL / 2067 UNIQUE / 275 CHECK）
+  else if ((code & 0xff) === 19) kind = 'constraint'
+  // 资源类主码：5 BUSY / 6 LOCKED / 13 FULL / 10 IOERR / 14 CANTOPEN / 8 READONLY / 11 CORRUPT
+  else if ([5, 6, 8, 10, 11, 13, 14].includes(code & 0xff)) kind = 'resource'
   else kind = 'unknown'
 
   return { kind, errcode: code, message: msg }

@@ -8,6 +8,7 @@
     "dev": "tsx src/index.ts",
     "dev:watch": "tsx watch src/index.ts",
     "seed": "tsx scripts/seed.ts",
+    "test": "DB_PATH=:memory: tsx --test test/safe.test.ts test/agentTraces.test.ts test/agentThreads.test.ts test/hooks.test.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
