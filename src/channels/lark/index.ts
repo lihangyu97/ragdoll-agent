@@ -21,12 +21,6 @@ export class LarkClient {
   private started = false
 
   constructor() {
-    if (!LARK_APP_ID || !LARK_APP_SECRET) {
-      throw new Error(
-        '缺少飞书配置：请在 .env 里设置 LARK_APP_ID / LARK_APP_SECRET（开放平台「凭证与基础信息」获取）'
-      )
-    }
-
     this.appId = LARK_APP_ID
     this.appSecret = LARK_APP_SECRET
     this.larkDomain = LARK_DOMAIN

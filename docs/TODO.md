@@ -27,13 +27,5 @@
 
 **尚未做**：
 
-- [ ] 全局兜底：`application/index.ts` 加 `process.on('unhandledRejection' / 'uncaughtException')`，记日志后 `process.exitCode = 1`（兜住 checkpointer 等第三方实例的漏网异常——`SqliteCheckpointer` 自己持有独立 DatabaseSync，不走 `getDb()`，safe 层管不到）
+- [x] 全局兜底：`application/index.ts` 加 `process.on('unhandledRejection' / 'uncaughtException')`，记日志后退出（unhandledRejection → exitCode=1 自然退出；uncaughtException → exit(1) 立即退出，兜住 checkpointer 等第三方实例的漏网异常——`SqliteCheckpointer` 自己持有独立 DatabaseSync，不走 `getDb()`，safe 层管不到）
 - [ ] 验证：造错脚本（删表 / 插 NULL / 插重复 open_id）断言 rethrow + 日志有记录；正常收发消息回归
-
-## 表结构迁移机制（2025-08 新增）
-
-**背景**：`initSchema()` 用 `CREATE TABLE IF NOT EXISTS`，表已存在时**不会改结构**。
-曾导致：旧库缺 `sender_open_id` 列，代码按新 schema 插入直接报错，只能靠手动删库重建。
-
-- [ ] 给 schema 加版本号（如 `PRAGMA user_version`），启动时比对，低版本执行 `ALTER TABLE` 迁移
-- [ ] 迁移脚本组织方式：`src/sqlite/migrations/` 下按版本号放迁移，`initSchema` 按顺序执行
