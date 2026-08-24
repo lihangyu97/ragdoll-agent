@@ -29,3 +29,15 @@
 
 - [x] 全局兜底：`application/index.ts` 加 `process.on('unhandledRejection' / 'uncaughtException')`，记日志后退出（unhandledRejection → exitCode=1 自然退出；uncaughtException → exit(1) 立即退出，兜住 checkpointer 等第三方实例的漏网异常——`SqliteCheckpointer` 自己持有独立 DatabaseSync，不走 `getDb()`，safe 层管不到）
 - [ ] 验证：造错脚本（删表 / 插 NULL / 插重复 open_id）断言 rethrow + 日志有记录；正常收发消息回归
+
+## 数据库索引（待定，2026-08 评估过暂不加）
+
+**背景**：当前每表几百条数据，全表扫描毫秒级，不加索引性能无感。但代码里几条高频查询路径值得以后加，成本极低：
+
+- [ ] `agent_traces(status, created_at)`：worker 轮询 `status='pending' ORDER BY created_at` + 启动时 `resetStaleProcessingTraces` 都命中
+- [ ] `agent_traces(thread_id)`：`getLatestProcessingTrace` 按 thread 查；且 `thread_id` 是 FK 引用列（Node 24 的 node:sqlite 默认开外键约束，见上文），对 FK 相关操作也有益
+- [ ] `agent_turns(thread_id, turn_no)`：每条 turn 写入前都跑 `MAX(turn_no)`，加完可走覆盖索引
+
+**明确不用加**：`channel_lark_user.open_id` / 各表 PK 已由 UNIQUE/主键约束隐式建索引；`channel_lark`、`logger` 应用里只 insert，显示工具的 ad-hoc 查询不需要索引。
+
+**决策**：暂不加，等数据量真上来了（或显示工具出现明显慢查询）再落到 `schema.ts` 的 `CREATE INDEX IF NOT EXISTS`（跟随现有清库重建流程，无迁移）。
