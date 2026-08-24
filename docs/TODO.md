@@ -2,6 +2,12 @@
 
 > 待办事项记录，做完一项勾一项。格式：`- [ ] 任务`（未做）/ `- [x] 任务`（完成）。
 
+## Cordis 框架重构（规划中，仅讨论未写代码）
+
+- [ ] 迁移方案结论见 `docs/cordis-migration.md`（Service/Plugin 映射、事件协议、迁移顺序、待决问题）
+- [ ] 下次开工前先过一遍 §9 待决问题，再按阶段零（database → logger → traces 包成 Service）动手
+- [ ] 每个阶段完成前 `pnpm typecheck` + `pnpm test` 保底
+
 ## SQL 访问层错误处理 ✅（2025-08 已实现）
 
 **背景**：`node:sqlite`（DatabaseSync）是同步 API，`prepare/run/get` 出错会**同步 throw**。
