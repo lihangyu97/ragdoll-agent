@@ -1,9 +1,9 @@
 import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
 import { trackHook, Hooks } from './hooks'
-import { getMaxTurnNo, insertTurn } from '@sqlite/agentTurns'
+import { getMaxTurnNo, insertTurn } from '@/sqlite/agentTurns'
 
 /**
- * Agent 每轮执行的轨迹记录器（数据操作见 @sqlite/agentTurns）。
+ * Agent 每轮执行的轨迹记录器（数据操作见 @/sqlite/agentTurns）。
  * 通过 hooks 收集每轮的输入/决策/结果/回复，写入 agent_turns 表。
  */
 export default class AgentTurn {

@@ -1,4 +1,4 @@
-import { insertLog } from '@sqlite/logger'
+import { insertLog } from '@/sqlite/logger'
 import { currentThreadId } from './context'
 
 export function stringify(value: unknown): string {

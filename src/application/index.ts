@@ -1,7 +1,7 @@
-import { LarkClient } from '@channels/lark'
-import { Worker } from '@worker/index'
-import { initSchema } from '@sqlite/base/schema'
-import logger from '@logger'
+import { LarkClient } from '@/channels/lark'
+import { Worker } from '@/worker/index'
+import { initSchema } from '@/sqlite/base/schema'
+import logger from '@/logger'
 
 export default class Application {
   private readonly lark = new LarkClient()

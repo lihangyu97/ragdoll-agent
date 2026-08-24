@@ -1,14 +1,14 @@
 import * as lark from '@larksuiteoapi/node-sdk'
-import { LARK_APP_ID, LARK_APP_SECRET, LARK_DOMAIN } from '@config/lark'
+import { LARK_APP_ID, LARK_APP_SECRET, LARK_DOMAIN } from '@/config/lark'
 import {
   insertLarkMessage,
   getUserName as getCachedUserName,
   upsertUser
-} from '@sqlite/channelLark'
-import { ensureThread } from '@sqlite/agentThreads'
-import { insertTrace, getLatestProcessingTrace } from '@sqlite/agentTraces'
-import { Hooks, trackHook } from '@agent/hooks'
-import logger, { stringify } from '@logger'
+} from '@/sqlite/channelLark'
+import { ensureThread } from '@/sqlite/agentThreads'
+import { insertTrace, getLatestProcessingTrace } from '@/sqlite/agentTraces'
+import { Hooks, trackHook } from '@/agent/hooks'
+import logger, { stringify } from '@/logger'
 import { type LarkMessage, parseMessageContent } from './message'
 
 export class LarkClient {

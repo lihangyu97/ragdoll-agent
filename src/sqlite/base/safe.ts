@@ -1,7 +1,7 @@
 import { getDb } from './db'
 import type { SQLInputValue, StatementSync } from 'node:sqlite'
-import logger from '@logger'
-import { currentThreadId } from '@logger/context'
+import logger from '@/logger'
+import { currentThreadId } from '@/logger/context'
 
 /**
  * SQLite 访问统一封装：所有数据模块的 prepare/run/get/all 都走这里。

@@ -1,6 +1,6 @@
-import { run } from '@agent'
+import { run } from '@/agent'
 
-import loggerHooks from '@toy/loggerHooks'
+import loggerHooks from '@/toy/loggerHooks'
 
 loggerHooks.track()
 

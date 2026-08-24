@@ -1,12 +1,12 @@
 import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
-import { API_KEY, BASE_URL, MODEL } from '@config/agent'
+import { API_KEY, BASE_URL, MODEL } from '@/config/agent'
 import { Hooks, triggerHooks } from './hooks'
 import Checkpointer from './checkpointer'
 import AgentTurn from './turn'
-import logger from '@logger'
-import _tools from '@toy/tools'
-import _systemPrompt from '@toy/systemPrompt'
+import logger from '@/logger'
+import _tools from '@/toy/tools'
+import _systemPrompt from '@/toy/systemPrompt'
 
 /** agent 单次执行的整体超时（毫秒）：覆盖多轮 LLM + 工具循环，超时通过 signal abort */
 const AGENT_RUN_TIMEOUT_MS = 5 * 60_000

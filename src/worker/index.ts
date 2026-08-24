@@ -1,13 +1,13 @@
-import { run } from '@agent'
-import { Hooks, triggerHooks } from '@agent/hooks'
+import { run } from '@/agent'
+import { Hooks, triggerHooks } from '@/agent/hooks'
 import {
   getPendingTrace,
   updateTraceStatus,
   resetStaleProcessingTraces,
   TRACE_STATUS
-} from '@sqlite/agentTraces'
-import logger, { stringify } from '@logger'
-import { threadContext } from '@logger/context'
+} from '@/sqlite/agentTraces'
+import logger, { stringify } from '@/logger'
+import { threadContext } from '@/logger/context'
 
 /**
  * Agent Worker：每隔 3s 轮询 agent_traces 表，取最早一条 pending 记录，

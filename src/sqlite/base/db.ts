@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { DB_PATH } from '@config/sqlite'
+import { DB_PATH } from '@/config/sqlite'
 
 let db: DatabaseSync | null = null
 

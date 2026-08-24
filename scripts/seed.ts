@@ -1,5 +1,5 @@
-import { initSchema } from '@sqlite/base/schema'
-import { upsertUser } from '@sqlite/channelLark'
+import { initSchema } from '@/sqlite/base/schema'
+import { upsertUser } from '@/sqlite/channelLark'
 
 /**
  * 种子用户脚本：删库（rm data/agent.db*）后执行 `pnpm seed`，

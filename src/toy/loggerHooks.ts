@@ -1,4 +1,4 @@
-import { trackHook, Hooks } from '@agent/hooks'
+import { trackHook, Hooks } from '@/agent/hooks'
 
 export default {
   track() {

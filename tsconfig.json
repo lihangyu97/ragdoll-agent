@@ -17,17 +17,7 @@
     "erasableSyntaxOnly": true,
     "moduleDetection": "force",
     "paths": {
-      "@agent": ["./src/agent/index"],
-      "@agent/*": ["./src/agent/*"],
-      "@application": ["./src/application/index"],
-      "@channels/*": ["./src/channels/*"],
-      "@config/*": ["./src/config/*"],
-      "@sqlite/*": ["./src/sqlite/*"],
-      "@toy/*": ["./src/toy/*"],
-      "@worker": ["./src/worker/index"],
-      "@worker/*": ["./src/worker/*"],
-      "@logger": ["./src/logger/index"],
-      "@logger/*": ["./src/logger/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]

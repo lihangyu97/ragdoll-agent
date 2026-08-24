@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
-import { DB_PATH } from '@config/sqlite'
+import { DB_PATH } from '@/config/sqlite'
 
 /** langgraph 会话状态持久化（checkpoint 存 SQLite，表由 SqliteSaver 自建） */
 export default class SqliteCheckpointer {
