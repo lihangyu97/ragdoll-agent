@@ -3,18 +3,6 @@ import * as lark from '@larksuiteoapi/node-sdk'
 import logger, { stringify } from '@/logger'
 import { assign } from '@/utils'
 import { larkBaseConfig, larkHandlers, LOGGER_LEVEL } from '@/config/lark'
-import {
-  insertLarkMessage,
-  getUserName as getCachedUserName,
-  upsertUser
-} from '@/sqlite/channelLark'
-import { ensureThread } from '@/sqlite/agentThreads'
-import {
-  insertTrace,
-  getLatestProcessingTrace,
-  updateTraceStatus,
-  TRACE_STATUS
-} from '@/sqlite/agentTraces'
 import { type LarkMessage, parseMessageContent } from './message'
 
 /**
@@ -23,6 +11,8 @@ import { type LarkMessage, parseMessageContent } from './message'
  * 完全不知道 agent 内部如何执行。
  */
 export default class LarkService extends Service {
+  static inject = ['channelLark', 'threads', 'traces']
+
   private readonly client: lark.Client
   private readonly ws: lark.WSClient
 
@@ -57,7 +47,7 @@ export default class LarkService extends Service {
         logger.error('[lark] 消息格式异常: ', { threadId, msg })
         return
       }
-      const trace = getLatestProcessingTrace(threadId)
+      const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
       if (!trace) return
       this.replyToMessage(trace.message_id, msg.content).catch(err =>
         logger.error('[lark] 回复失败: ', { threadId, error: stringify(err) })
@@ -65,7 +55,7 @@ export default class LarkService extends Service {
     })
 
     this.ctx.on('agent/error', (threadId, error) => {
-      const trace = getLatestProcessingTrace(threadId)
+      const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
       if (!trace) return
       this.replyToMessage(trace.message_id, `⚠️ Agent 处理失败：${error}`).catch(err =>
         logger.error('[lark] 错误回复失败: ', { threadId, error: stringify(err) })
@@ -107,7 +97,7 @@ export default class LarkService extends Service {
 
     const senderName = openId ? await this.getUserName(openId) : 'unknown'
 
-    insertLarkMessage({
+    this.ctx.channelLark.insertLarkMessage({
       event_type: msg.event_type ?? '',
       app_id: msg.app_id ?? '',
       chat_id: chatId,
@@ -121,33 +111,14 @@ export default class LarkService extends Service {
       content
     })
 
-    // 写入 agent 队列（pending），随即抢占执行；后续由 workService 统一接管队列
-    ensureThread(threadId, msg.message.chat_type, chatId, openId ?? null)
-    const traceId = insertTrace(threadId, messageId, chatId, content)
+    // 写入 agent 队列（pending），由 workerService 轮询消费；最终回复由 agent/result 事件触发
+    this.ctx.threads.ensureThread(threadId, msg.message.chat_type, chatId, openId ?? null)
+    this.ctx.traces.insertTrace(threadId, messageId, chatId, content)
 
-    await this.processTrace(threadId, traceId, messageId, content)
-  }
-
-  /** 抢占 trace 为 processing → 跑 agent → 标记 done/failed（回复由 agent/* 事件订阅负责） */
-  private async processTrace(
-    threadId: string,
-    traceId: number,
-    messageId: string,
-    content: string
-  ) {
-    updateTraceStatus(traceId, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
+    this.ctx.emit('message/received', threadId, content)
 
     // 先回个"正在思考"，长任务期间用户有反馈
     await this.replyToMessage(messageId, '🤔 正在思考中…')
-
-    // TODO: workService 落地后改为只入队，由 worker 轮询抢锁执行
-    try {
-      await this.ctx.agent.run(content, threadId)
-      updateTraceStatus(traceId, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
-    } catch (err) {
-      updateTraceStatus(traceId, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
-      logger.error(`[lark] agent run fail: ${threadId}`, err)
-    }
   }
 
   private resolveThreadId(msg: LarkMessage): string | null {
@@ -162,7 +133,7 @@ export default class LarkService extends Service {
   }
 
   private async getUserName(openId: string): Promise<string> {
-    const cached = getCachedUserName(openId)
+    const cached = this.ctx.channelLark.getUserName(openId)
     if (cached) return cached
 
     try {
@@ -172,7 +143,7 @@ export default class LarkService extends Service {
       })
       const name = res.data?.user?.name
       if (name) {
-        upsertUser(openId, name)
+        this.ctx.channelLark.upsertUser(openId, name)
         return name
       }
     } catch (err) {

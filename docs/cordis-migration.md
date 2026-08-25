@@ -7,20 +7,37 @@
 
 ## 0. 当前进展（2025-08-25 更新）
 
-已落地（`pnpm typecheck` + `pnpm test` 全绿，`pnpm dev` 冒烟正常）：
+**全部落地**（`pnpm typecheck` + `pnpm test` 全绿，`pnpm dev` 冒烟 + 真实 LLM 链路验证通过）：
 
-- **agent Service**（`src/services/agent/AgentService.ts`）：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播 `agent/input` / `agent/tool-call` / `agent/tool-result` / `agent/result` / `agent/error` 五个类型化事件（声明合并进 `cordis` 的 `Events`）；`registerTools()` / `setSystemPrompt()` 作为 tools/prompt 注册点；config 校验挪进构造器（缺 env 插件 FAILED 而非 import 崩进程）
-- **demo 插件**（`src/plugins/agent-demo.ts`）：加载即把 `@/toy/tools`、`@/toy/systemPrompt` 注入 agent，`inject: ['agent']`
-- **lark 打通**（`src/services/lark/LarkService.ts`）：入站全流程（落库 channel_lark → ensureThread → insertTrace → 抢占 processing → `ctx.agent.run` → done/failed），订阅 `agent/result`/`agent/error` 反查 processing trace 回消息；每 thread 串行队列避免并发回复错乱
-- `insertTrace` 改为 `RETURNING id` 返回 trace id（原调用方不受影响）
-- 根入口（`src/index.ts`）：`initSchema()` + 装配 AgentService / agent-demo / LarkService / channel
+**Services**（各带 `static inject` 声明依赖）：
 
-**遗留（下一步）**：
+- **`database`**（`src/services/database/DatabaseService.ts`）：收编 `sqlite/base`（连接 getDb + 建表 initSchema + safe run/get/all + 错误分级 classifySqliteError），构造时建表
+- **`traces` / `threads` / `turns` / `channelLark`**（`src/services/{traces,threads,turns,channel-lark}/`）：原 `sqlite/agentTraces` 等 1:1 平移，注入 database；`TRACE_STATUS` / `THREAD_STATUS` 常量随 Service 导出
+- **`agent`**（`src/services/agent/AgentService.ts`）：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播 `agent/input` / `agent/tool-call` / `agent/tool-result` / `agent/result` / `agent/error` 五个类型化事件；`registerTools()` / `setSystemPrompt()` 作为 tools/prompt 注册点
+- **`lark`**（`src/services/lark/LarkService.ts`）：入站生产（落库 channel_lark → ensureThread → insertTrace → 回"正在思考"）+ 出站（replyToMessage）；订阅 `agent/result`/`agent/error` 反查 processing trace 回消息
+- **`worker`**（`src/services/worker/WorkerService.ts`）：轮询 `agent_traces`（3s），抢锁 → `ctx.agent.run` → done/failed；启动时 `resetStaleProcessingTraces` 兜底残留
 
-- worker 插件未落地：当前 lark 内联跑 agent（`LarkService.processTrace` 有 TODO），worker 插件落地后改回"只入队 + 轮询抢锁"
-- 旧代码（`src/agent/*`、`src/worker`、`src/channels/lark`、`src/application`、`src/toy/demo.ts`、`src/toy/loggerHooks.ts`）仍是死代码，按 AGENST 未删，等对应插件落地时清理
-- sqlite 各层尚未包成 Service（database/traces/threads…），`initSchema` 暂留根上
-- turn-recorder 插件未做（订阅 agent/* 写 agent_turns）
+**Plugins**：
+
+- `channel`：lark 生命周期（effect 包 start/close）
+- `worker`：worker 生命周期（effect 包 start/stop）
+- `agent-demo`：注入 toy tools/prompt 到 agent
+- `turn-recorder`：订阅 agent/* 写 `agent_turns`（以 agent/input 为轮次边界，worker 串行保证单活跃轮）
+- `console-demo`：订阅 agent/* 打印到控制台（原 toy/loggerHooks）
+
+**事件**：`agent/*` 五个 + 领域层 `message/received`（lark 入队后广播）、`trace/status`（worker 状态流转广播）
+
+**其他**：`insertTrace` 改 `RETURNING id`；根入口装配全部插件；测试改为 cordis Context + Service 模式（`test/{database,traces,threads}.test.ts`）；`logger` 按文档待决问题"倾向保留自定义"保持 `@/logger` 模块（落库依赖保留的 `@/sqlite/logger` + `getDb`）；旧死代码（`src/agent/*`、`src/worker`、`src/channels/lark`、`src/application`、`src/toy/demo`、`src/toy/loggerHooks`、`src/sqlite/*` 各 repository）已删除
+
+**已验证**：真实 LLM 链路——插入 pending trace → worker 消费（pending→done）→ 工具调用（getLocation → getWeather+getTemperature）→ `agent/result` 触发 lark 回复 + turn-recorder 写入 7 条轮次记录。
+
+**cordis 坑（已踩）**：插件/Service 的 fiber 上下文访问其他 service 必须先声明 `inject`，否则 `ctx.xxx` 抛 `cannot get property "xxx" without inject`——Service 类用 `static inject = [...]`，普通插件对象用 `inject: [...]` 字段。
+
+**遗留（可选，文档 §7 阶段四）**：
+
+- config 换 Schema 校验、拆 import 副作用（当前 `config/agent.ts` 保留 import 时 throw + `modelConfig`，`config/lark.ts` 同样）
+- `trace/status` / `message/received` 目前无订阅方（观察/审计预留）
+- 双连接问题（getDb 单例 vs agent checkpointer）仍在，文档 §8 说明
 
 ---
 

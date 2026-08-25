@@ -1,5 +1,6 @@
-import { initSchema } from '@/sqlite/base/schema'
-import { upsertUser } from '@/sqlite/channelLark'
+import { Context } from 'cordis'
+import DatabaseService from '@/services/database/DatabaseService'
+import ChannelLarkService from '@/services/channel-lark/ChannelLarkService'
 
 /**
  * 种子用户脚本：删库（rm data/agent.db*）后执行 `pnpm seed`，
@@ -11,9 +12,11 @@ const SEED_USERS = [
   { openId: 'ou_91869f5e371b7c238b2bf22f30687540', name: '李航宇' }
 ]
 
-initSchema()
+const ctx = new Context()
+ctx.plugin(DatabaseService)
+await ctx.plugin(ChannelLarkService)
 
 for (const user of SEED_USERS) {
-  upsertUser(user.openId, user.name)
+  ctx.channelLark.upsertUser(user.openId, user.name)
   console.log(`✅ 种子用户已写入: ${user.name} (${user.openId})`)
 }
