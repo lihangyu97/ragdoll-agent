@@ -4,7 +4,6 @@ import { DatabaseSync } from 'node:sqlite'
 
 let db: DatabaseSync | null = null
 
-/** 获取单例数据库连接 */
 export function getDb(): DatabaseSync {
   if (!db) {
     const DB_PATH = process.env.DB_PATH ?? 'data/agent.db'

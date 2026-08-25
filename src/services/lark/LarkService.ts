@@ -1,6 +1,6 @@
 import { Service, type Context } from 'cordis'
 import * as lark from '@larksuiteoapi/node-sdk'
-import logger from '@/logger'
+import logger from '@/utils/logger'
 import { assign, stringify } from '@/utils'
 import { type LarkMessage, parseMessageContent } from './message'
 

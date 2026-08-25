@@ -1,9 +1,9 @@
 import { Service, type Context } from 'cordis'
-import { getDb } from '@/sqlite/base/db'
+import { getDb } from '@/utils/sqlite'
 import { THREAD_STATUS } from '@/services/threads/ThreadsService'
 import { TRACE_STATUS } from '@/services/traces/TracesService'
-import logger from '@/logger'
-import { currentThreadId } from '@/logger/context'
+import logger from '@/utils/logger'
+import { currentThreadId } from '@/utils/context'
 import type { SQLInputValue, StatementSync } from 'node:sqlite'
 
 export type SqliteErrorKind = 'schema' | 'constraint' | 'resource' | 'unknown'

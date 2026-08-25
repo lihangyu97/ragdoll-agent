@@ -1,7 +1,7 @@
 import { Service, type Context } from 'cordis'
 import { TRACE_STATUS, type AgentTraceRecord } from '@/services/traces/TracesService'
-import logger from '@/logger'
-import { threadContext } from '@/logger/context'
+import logger from '@/utils/logger'
+import { threadContext } from '@/utils/context'
 
 /** 轮询间隔（毫秒）：每个 tick 内把队列消费到空，运行中新消息最多延迟一个间隔 */
 const POLL_INTERVAL_MS = 3_000

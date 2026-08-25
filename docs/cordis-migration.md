@@ -21,7 +21,7 @@
 
 **事件**：`agent/*` 五个 + 领域层 `message/received`（lark 入队后广播）、`trace/status`（worker 状态流转广播）
 
-**其他**：`insertTrace` 改 `RETURNING id`；根入口装配全部插件；测试改为 cordis Context + Service 模式（`test/{database,traces,threads}.test.ts`）；`logger` 保持 `@/logger` 模块（见 §3）；旧死代码（`src/agent/*`、`src/worker`、`src/channels/lark`、`src/application`、`src/sqlite/*` 各 repository 等）已删除
+**其他**：`insertTrace` 改 `RETURNING id`；根入口装配全部插件；测试改为 cordis Context + Service 模式（`test/{database,traces,threads}.test.ts`）；`logger` 并入 `@/utils/logger` 模块（见 §3）；旧死代码（`src/agent/*`、`src/worker`、`src/channels/lark`、`src/application`、`src/config`、`src/sqlite/*` 各 repository 等）已删除
 
 ---
 
@@ -57,7 +57,7 @@
 | `sqlite/base`（db/schema/safe）                      | **`database` Service**                      | ✅         | 连接 + 建表 + safe 执行 + 错误分级                                                                          |
 | `sqlite/agentTraces`                                 | **`traces` Service**                        | ✅         | 队列能力：enqueue / 抢锁 / 状态流转                                                                         |
 | `sqlite/agentThreads` / `agentTurns` / `channelLark` | `threads` / `turns` / `channelLark` Service | ✅         | 1:1 repository                                                                                              |
-| `logger` + `logger/context`                          | 保留 `@/logger` **模块**（非 Service）      | ✅（决策） | cordis 内置 `ctx.logger` 占名；按待决问题"倾向保留自定义"处理，改动最小；`AsyncLocalStorage` 线程上下文保留 |
+| `logger` + `logger/context`                          | 并入 `@/utils/logger` **模块**（非 Service） | ✅（决策） | cordis 内置 `ctx.logger` 占名；按待决问题"倾向保留自定义"处理，改动最小；`AsyncLocalStorage` 线程上下文保留 |
 | `agent/index`                                        | **`agent` Service**                         | ✅         | `ctx.agent.run`；tools/prompt 插件注入                                                                      |
 | `agent/checkpointer`                                 | agent Service 内部依赖                      | ✅         | 内联 SqliteSaver                                                                                            |
 | `agent/hooks`（HookBus）                             | **删除 → cordis 事件系统**                  | ✅         | 文件已删                                                                                                    |
@@ -122,7 +122,7 @@ lark:           inject [channelLark, threads, traces]（订阅 agent/* 回消息
 worker:         inject [agent, traces]（轮询队列 + 状态流转 + trace/status）
 turn-recorder:  inject [turns]（订阅 agent/* 写库）
 agent-demo:     inject [agent]（注册工具/提示词）
-logger:         @/logger 模块（非 Service，落库走 @/sqlite/logger + getDb）
+logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite 的 insertLog/getDb）
 ```
 
 ---

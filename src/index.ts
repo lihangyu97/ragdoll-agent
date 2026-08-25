@@ -1,5 +1,5 @@
 import { Context } from 'cordis'
-import logger from '@/logger'
+import logger from '@/utils/logger'
 import DatabaseService from '@/services/database/DatabaseService'
 import TracesService from '@/services/traces/TracesService'
 import ThreadsService from '@/services/threads/ThreadsService'

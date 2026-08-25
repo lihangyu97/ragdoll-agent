@@ -8,7 +8,7 @@ import { AIMessage, ToolMessage } from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import type { ClientTool } from '@langchain/core/tools'
 import { stringify } from '@/utils'
-import { threadContext } from '@/logger/context'
+import { threadContext } from '@/utils/context'
 
 /** agent 单次执行的整体超时（毫秒）：覆盖多轮 LLM + 工具循环，超时通过 signal abort */
 const AGENT_RUN_TIMEOUT_MS = 5 * 60_000
