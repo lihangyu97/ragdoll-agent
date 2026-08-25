@@ -5,13 +5,6 @@ import { assign } from '@/utils'
 import { larkBaseConfig, larkHandlers, LOGGER_LEVEL } from '@/config/lark'
 import { type LarkMessage, parseMessageContent } from './message'
 
-declare module 'cordis' {
-  interface Context {
-    lark: LarkService
-  }
-  interface Events {}
-}
-
 export default class LarkService extends Service {
   private readonly client: lark.Client
   private readonly ws: lark.WSClient
