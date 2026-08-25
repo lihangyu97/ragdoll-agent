@@ -8,7 +8,7 @@ import ThreadsService from '../src/services/threads/ThreadsService'
 import TracesService, { TRACE_STATUS } from '../src/services/traces/TracesService'
 
 const ctx = new Context()
-ctx.plugin(DatabaseService)
+ctx.plugin(DatabaseService, { dbPath: ':memory:' })
 ctx.plugin(ThreadsService)
 await ctx.plugin(TracesService)
 

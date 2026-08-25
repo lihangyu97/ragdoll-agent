@@ -6,7 +6,7 @@ import { Context } from 'cordis'
 import DatabaseService from '../src/services/database/DatabaseService'
 
 const ctx = new Context()
-await ctx.plugin(DatabaseService)
+await ctx.plugin(DatabaseService, { dbPath: ':memory:' })
 
 function fakeError(errcode: number) {
   return Object.assign(new Error(`err ${errcode}`), { errcode })

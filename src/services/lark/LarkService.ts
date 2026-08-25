@@ -1,5 +1,6 @@
 import { Service, type Context } from 'cordis'
 import * as lark from '@larksuiteoapi/node-sdk'
+import { z } from 'zod'
 import logger from '@/utils/logger'
 import { assign, stringify } from '@/utils'
 import { type LarkMessage, parseMessageContent } from './message'
@@ -11,25 +12,23 @@ import { type LarkMessage, parseMessageContent } from './message'
 export default class LarkService extends Service {
   static inject = ['channelLark', 'threads', 'traces']
 
-  private readonly LARK_DOMAIN = lark.Domain.Feishu
+  static Config = z.object({
+    appId: z.string().min(1),
+    appSecret: z.string().min(1),
+    domain: z.enum(['feishu', 'lark']).default('feishu')
+  })
+
   private readonly LOGGER_LEVEL = lark.LoggerLevel.error
   private readonly client: lark.Client
   private readonly ws: lark.WSClient
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: z.infer<typeof LarkService.Config>) {
     super(ctx, 'lark')
 
-    const LARK_APP_ID = process.env.LARK_APP_ID
-    const LARK_APP_SECRET = process.env.LARK_APP_SECRET
-
-    if (!LARK_APP_ID || !LARK_APP_SECRET) {
-      throw new Error('缺少飞书配置：请检查 LARK_APP_ID LARK_APP_SECRET')
-    }
-
     const larkConfig = {
-      appId: LARK_APP_ID,
-      appSecret: LARK_APP_SECRET,
-      domain: this.LARK_DOMAIN,
+      appId: config.appId,
+      appSecret: config.appSecret,
+      domain: config.domain === 'lark' ? lark.Domain.Lark : lark.Domain.Feishu,
       loggerLevel: this.LOGGER_LEVEL
     }
 

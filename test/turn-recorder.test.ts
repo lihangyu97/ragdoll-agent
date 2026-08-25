@@ -9,7 +9,7 @@ import TurnsService from '../src/services/turns/TurnsService'
 import turnRecorder from '../src/plugins/turn-recorder'
 
 const ctx = new Context()
-ctx.plugin(DatabaseService)
+ctx.plugin(DatabaseService, { dbPath: ':memory:' })
 ctx.plugin(TurnsService)
 await ctx.plugin(turnRecorder)
 

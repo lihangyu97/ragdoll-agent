@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { Context } from 'cordis'
 import DatabaseService from '@/services/database/DatabaseService'
 import ChannelLarkService from '@/services/channel-lark/ChannelLarkService'
@@ -13,7 +14,7 @@ const SEED_USERS = [
 ]
 
 const ctx = new Context()
-ctx.plugin(DatabaseService)
+ctx.plugin(DatabaseService, { dbPath: process.env.DB_PATH ?? 'data/agent.db' })
 await ctx.plugin(ChannelLarkService)
 
 for (const user of SEED_USERS) {

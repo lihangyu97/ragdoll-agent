@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import 'dotenv/config'
 import { Service, type Context } from 'cordis'
+import { z } from 'zod'
 import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
 import { AIMessage, ToolMessage } from '@langchain/core/messages'
@@ -14,39 +14,37 @@ import { threadContext } from '@/utils/context'
 const AGENT_RUN_TIMEOUT_MS = 5 * 60_000
 
 export default class AgentService extends Service {
+  static Config = z.object({
+    apiKey: z.string().min(1),
+    baseUrl: z.string().min(1),
+    model: z.string().default('deepseek-v4-flash'),
+    dbPath: z.string().default('data/agent.db')
+  })
+
   private readonly model: ChatOpenAI
   private readonly checkpointer: SqliteSaver
   private agent: ReturnType<typeof createAgent> | undefined
   private tools: ClientTool[] = []
   private systemPrompt: string = ''
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: z.infer<typeof AgentService.Config>) {
     super(ctx, 'agent')
 
-    const API_KEY = process.env.OPENAI_API_KEY!
-    const BASE_URL = process.env.OPENAI_BASE_URL!
-    const MODEL = process.env.OPENAI_MODEL ?? 'deepseek-v4-flash'
-
-    if (!API_KEY || !BASE_URL) {
-      throw new Error('缺少 LLM 配置：请在 .env 设置 OPENAI_API_KEY / OPENAI_BASE_URL')
-    }
-
     this.model = new ChatOpenAI({
-      model: MODEL,
-      apiKey: API_KEY,
+      model: config.model,
+      apiKey: config.apiKey,
       streaming: true,
       timeout: 60_000,
       maxRetries: 2,
-      configuration: { baseURL: BASE_URL }
+      configuration: { baseURL: config.baseUrl }
     })
-    this.checkpointer = this.initCheckpointer()
+    this.checkpointer = this.initCheckpointer(config.dbPath)
   }
 
-  initCheckpointer() {
-    const DB_PATH = process.env.DB_PATH ?? 'data/agent.db'
-    mkdirSync(dirname(DB_PATH), { recursive: true })
+  initCheckpointer(dbPath: string) {
+    mkdirSync(dirname(dbPath), { recursive: true })
 
-    const checkpointer = SqliteSaver.fromConnString(DB_PATH)
+    const checkpointer = SqliteSaver.fromConnString(dbPath)
     checkpointer.db.pragma('busy_timeout = 5000')
 
     return checkpointer

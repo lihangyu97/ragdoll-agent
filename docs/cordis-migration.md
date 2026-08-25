@@ -7,7 +7,7 @@
 
 ## 0. 当前进展
 
-`pnpm typecheck` + `pnpm test`（20 用例）全绿；`pnpm dev` 冒烟 + 真实 LLM 链路验证通过（插入 pending trace → worker 消费 done → 工具调用链 → agent/result 触发 lark 回复 + turn-recorder 写入轮次记录）。
+`pnpm typecheck` + `pnpm test`（28 用例）全绿；`pnpm dev` 冒烟 + 真实 LLM 链路验证通过（插入 pending trace → worker 消费 done → 工具调用链 → agent/result 触发 lark 回复 + turn-recorder 写入轮次记录）。
 
 **Services**（各带 `static inject` 声明依赖；实现见 `src/services/*`）：
 
@@ -52,23 +52,23 @@
 
 ## 3. Service / Plugin 映射表（最终结果）
 
-| 原模块                                               | cordis 角色                                 | 状态       | 说明                                                                                                        |
-| ---------------------------------------------------- | ------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| `sqlite/base`（db/schema/safe）                      | **`database` Service**                      | ✅         | 连接 + 建表 + safe 执行 + 错误分级                                                                          |
-| `sqlite/agentTraces`                                 | **`traces` Service**                        | ✅         | 队列能力：enqueue / 抢锁 / 状态流转                                                                         |
-| `sqlite/agentThreads` / `agentTurns` / `channelLark` | `threads` / `turns` / `channelLark` Service | ✅         | 1:1 repository                                                                                              |
-| `logger` + `logger/context`                          | 并入 `@/utils/logger` **模块**（非 Service） | ✅（决策） | cordis 内置 `ctx.logger` 占名；按待决问题"倾向保留自定义"处理，改动最小；`AsyncLocalStorage` 线程上下文保留 |
-| `agent/index`                                        | **`agent` Service**                         | ✅         | `ctx.agent.run`；tools/prompt 插件注入                                                                      |
-| `agent/checkpointer`                                 | agent Service 内部依赖                      | ✅         | 内联 SqliteSaver                                                                                            |
-| `agent/hooks`（HookBus）                             | **删除 → cordis 事件系统**                  | ✅         | 文件已删                                                                                                    |
-| `agent/turn`（AgentTurn）                            | **`turn-recorder` Plugin**                  | ✅         | 订阅 agent/* 写库                                                                                           |
-| `worker`                                             | **`worker` Service + Plugin**               | ✅         | 轮询循环由插件 effect 包 start/stop；注入 `traces` + `agent`                                                |
-| `channels/lark`                                      | **`lark` Service**                          | ✅         | 入站（WS 收消息）+ 出站（replyToMessage 等）                                                                |
-| `channels/lark/message`                              | lark Service 内部纯函数工具                 | ✅         | `src/services/lark/message.ts`                                                                              |
-| `toy/tools`、`systemPrompt`                          | **`agent-demo` Plugin**                     | ✅         | 注册工具/提示词                                                                                             |
-| `toy/loggerHooks`                                    | **`console-demo` Plugin**                   | ✅         | 订阅 agent/* 打印                                                                                           |
-| `config/*`                                           | 拆 import 副作用 → 构造器校验 → 插件 FAILED | ✅         | import 不再 throw；缺 env 由 Service 构造器校验，插件 FAILED（console 可见）                                |
-| `application` + `index`                              | 根：`new Context()` → `ctx.plugin(...)`     | ✅         | 信号处理 + uncaught 兜底 + cordis 日志 console exporter 都在根上                                            |
+| 原模块                                               | cordis 角色                                               | 状态       | 说明                                                                                                        |
+| ---------------------------------------------------- | --------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `sqlite/base`（db/schema/safe）                      | **`database` Service**                                    | ✅         | 连接 + 建表 + safe 执行 + 错误分级                                                                          |
+| `sqlite/agentTraces`                                 | **`traces` Service**                                      | ✅         | 队列能力：enqueue / 抢锁 / 状态流转                                                                         |
+| `sqlite/agentThreads` / `agentTurns` / `channelLark` | `threads` / `turns` / `channelLark` Service               | ✅         | 1:1 repository                                                                                              |
+| `logger` + `logger/context`                          | 并入 `@/utils/logger` **模块**（非 Service）              | ✅（决策） | cordis 内置 `ctx.logger` 占名；按待决问题"倾向保留自定义"处理，改动最小；`AsyncLocalStorage` 线程上下文保留 |
+| `agent/index`                                        | **`agent` Service**                                       | ✅         | `ctx.agent.run`；tools/prompt 插件注入                                                                      |
+| `agent/checkpointer`                                 | agent Service 内部依赖                                    | ✅         | 内联 SqliteSaver                                                                                            |
+| `agent/hooks`（HookBus）                             | **删除 → cordis 事件系统**                                | ✅         | 文件已删                                                                                                    |
+| `agent/turn`（AgentTurn）                            | **`turn-recorder` Plugin**                                | ✅         | 订阅 agent/* 写库                                                                                           |
+| `worker`                                             | **`worker` Service + Plugin**                             | ✅         | 轮询循环由插件 effect 包 start/stop；注入 `traces` + `agent`                                                |
+| `channels/lark`                                      | **`lark` Service**                                        | ✅         | 入站（WS 收消息）+ 出站（replyToMessage 等）                                                                |
+| `channels/lark/message`                              | lark Service 内部纯函数工具                               | ✅         | `src/services/lark/message.ts`                                                                              |
+| `toy/tools`、`systemPrompt`                          | **`agent-demo` Plugin**                                   | ✅         | 注册工具/提示词                                                                                             |
+| `toy/loggerHooks`                                    | **`console-demo` Plugin**                                 | ✅         | 订阅 agent/* 打印                                                                                           |
+| `config/*`（已删，配置内联到各 Service）             | 各 Service `static Config`（zod schema）+ 根入口传 config | ✅         | 配置统一从 env 读入经 cordis Config 校验 → 缺配置插件 FAILED（ValidationError 可见）                        |
+| `application` + `index`                              | 根：`new Context()` → `ctx.plugin(...)`                   | ✅         | 信号处理 + uncaught 兜底 + cordis 日志 console exporter 都在根上                                            |
 
 **判据小结**：别人会调用它、实现唯一 → Service（database / traces / threads / turns / lark 出站 / agent 运行）；启动后自己跑、消费别人 → Plugin（worker / turn-recorder / lark 入站 / toy 演示）。`agent` 既是能力（run 被 worker 调）又是事件源（发 agent/* 事件），**Service 发声 + 事件广播**，两者不冲突。
 
@@ -135,10 +135,10 @@ logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite �
 
 - [x] **P1 补回 uncaught 兜底**：`src/index.ts` 根上保留 `unhandledRejection`（exitCode=1 自然退出）/ `uncaughtException`（exit(1) 立即退出）——兜住 checkpointer 等第三方实例的漏网异常
 - [x] **P2 补 worker / turn-recorder 单测**：`test/worker.test.ts`（mock agent Service + 轮询消费 + trace/status 事件，含失败路径）、`test/turn-recorder.test.ts`（事件驱动写库、轮次递增、跨 thread 忽略）
-- [x] **P3 config 拆 import 副作用**：`config/agent.ts` / `config/lark.ts` 不再 import 时 throw（非空断言仅收窄类型），校验挪进 AgentService / LarkService 构造器 → 缺 env 插件 FAILED；配套在根上注册 `ctx.logger` console exporter（cordis 4 rc 内置 logger 默认只缓冲不输出，否则插件错误不可见）
+- [x] **P3 config 改 cordis Config**：各 Service 定义 `static Config`（zod schema，如 `apiKey`/`baseUrl`/`appId`/`dbPath`/`domain`），根入口 `src/index.ts` 统一从 env 读入并 `ctx.plugin(Service, config)` 传入 → 缺配置插件 FAILED（ValidationError 列出问题字段）；配套在根上注册 `ctx.logger` console exporter（cordis 4 rc 内置 logger 默认只缓冲不输出，否则插件错误不可见）；`src/config/` 目录已删，配置内联进各 Service 或经 Config 传入
 - [ ] **P4 事件订阅方 / 第二渠道**：`trace/status`、`message/received` 目前无订阅方（观察/审计预留）；加 web/console 渠道验证事件协议
 - [ ] **P5 responder**：把 channel/message_id 写进 trace 的通用回复器（多渠道出现时再做）
-- [ ] **明确不做**：minato / `ctx.model`（保留原生 sqlite）、DB 队列保留、事件不持久化、数据库索引（数据量上来再说，见 TODO.md）；Schema 校验未引入（构造器校验已达成"FAILED 而非崩进程"，Schema 收益有限，需要时再加）
+- [ ] **明确不做**：minato / `ctx.model`（保留原生 sqlite）、DB 队列保留、事件不持久化、数据库索引（数据量上来再说，见 TODO.md）
 
 ---
 
@@ -146,7 +146,7 @@ logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite �
 
 - **inject 必须声明（已踩）**：插件/Service 的 fiber 上下文访问其他 service 必须声明 `inject`，否则 `ctx.xxx` 抛 `cannot get property "xxx" without inject`——Service 类用 `static inject = [...]`，普通插件对象用 `inject: [...]` 字段
 - **cordis 4 rc 内置 logger 默认静默（已踩）**：`ctx.logger` 只把消息推进缓冲，不输出 console；插件 FAILED 的错误会被吞掉。根上注册 `ctx.logger.exporter`（error/warn 打到 console）才能看到原因
-- **import 时副作用**：已拆（config 不 throw），缺 env 由 Service 构造器校验 → 插件 FAILED 且 console 可见
+- **import 时副作用**：已拆（`src/config/` 目录删除，配置内联/Config 化）；缺配置由 cordis Config（zod）校验 → 插件 FAILED（ValidationError 列出字段）且 console 可见
 - **双连接问题仍在**：`getDb()` 单例和 agent checkpointer（SqliteSaver）各自持有 SQLite 连接（WAL + busy_timeout 已有），cordis 不解决，文档说明即可
 - **事件只在进程内**：cordis 事件不跨进程也不持久化，DB 队列仍是跨进程/重启恢复的可靠通道；不要试图把事件做持久，worker 轮询 DB 在多进程下依然成立
 - **测试**：已切换为 `new Context()` + plugin Service 单测，`DB_PATH=:memory:` 照常工作

@@ -1,4 +1,5 @@
 import { Service, type Context } from 'cordis'
+import { z } from 'zod'
 import { getDb } from '@/utils/sqlite'
 import { THREAD_STATUS } from '@/services/threads/ThreadsService'
 import { TRACE_STATUS } from '@/services/traces/TracesService'
@@ -19,8 +20,13 @@ export type SqliteErrorInfo = {
  * 底层连接用 getDb() 单例（双连接问题：agent checkpointer 另持有连接，见文档 §8）。
  */
 export default class DatabaseService extends Service {
-  constructor(ctx: Context) {
+  static Config = z.object({
+    dbPath: z.string().default('data/agent.db')
+  })
+
+  constructor(ctx: Context, config: z.infer<typeof DatabaseService.Config>) {
     super(ctx, 'database')
+    getDb(config.dbPath)
     this.initSchema()
   }
 

@@ -7,7 +7,7 @@ import DatabaseService from '../src/services/database/DatabaseService'
 import ThreadsService, { THREAD_STATUS } from '../src/services/threads/ThreadsService'
 
 const ctx = new Context()
-ctx.plugin(DatabaseService)
+ctx.plugin(DatabaseService, { dbPath: ':memory:' })
 await ctx.plugin(ThreadsService)
 
 beforeEach(() => {

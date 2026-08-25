@@ -33,7 +33,7 @@ class MockAgentService extends Service {
 }
 
 const ctx = new Context()
-ctx.plugin(DatabaseService)
+ctx.plugin(DatabaseService, { dbPath: ':memory:' })
 ctx.plugin(ThreadsService)
 ctx.plugin(TracesService)
 ctx.plugin(MockAgentService)

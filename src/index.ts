@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { Context } from 'cordis'
 import logger from '@/utils/logger'
 import DatabaseService from '@/services/database/DatabaseService'
@@ -36,15 +37,24 @@ process.on('uncaughtException', err => {
   process.exit(1) // 进程状态已不可信，立即退出（重启后孤儿 trace 有重置兜底）
 })
 
-// database Service 构造时建表（initSchema）
-app.plugin(DatabaseService)
+// 配置统一从环境变量读入，经 cordis Config（zod schema）校验后传给插件；缺配置 → 插件 FAILED
+app.plugin(DatabaseService, { dbPath: process.env.DB_PATH ?? 'data/agent.db' })
 app.plugin(TracesService)
 app.plugin(ThreadsService)
 app.plugin(TurnsService)
 app.plugin(ChannelLarkService)
-app.plugin(AgentService)
+app.plugin(AgentService, {
+  apiKey: process.env.OPENAI_API_KEY!,
+  baseUrl: process.env.OPENAI_BASE_URL!,
+  model: process.env.OPENAI_MODEL ?? 'deepseek-v4-flash',
+  dbPath: process.env.DB_PATH ?? 'data/agent.db'
+})
 app.plugin(agentDemo)
-app.plugin(LarkService)
+app.plugin(LarkService, {
+  appId: process.env.LARK_APP_ID!,
+  appSecret: process.env.LARK_APP_SECRET!,
+  domain: process.env.LARK_DOMAIN === 'lark' ? 'lark' : 'feishu'
+})
 app.plugin(channel)
 app.plugin(WorkerService)
 app.plugin(worker)
