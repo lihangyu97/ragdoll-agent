@@ -1,19 +1,6 @@
 import { insertLog } from '@/sqlite/logger'
+import { stringify } from '@/utils'
 import { currentThreadId } from './context'
-
-export function stringify(value: unknown): string {
-  if (value === null) return 'null'
-  if (value === undefined) return 'undefined'
-  if (typeof value === 'string') return value
-  if (value instanceof Error) {
-    return value.stack ? `${value.message}\n${value.stack}` : value.message
-  }
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
 
 export default {
   info(message: string, data?: unknown) {
