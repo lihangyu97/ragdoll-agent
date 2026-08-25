@@ -60,23 +60,23 @@ export default class WorkerService extends Service {
     }
   }
 
-  /** 跑一条 trace：agent.run + 状态流转（成功 done / 失败 failed），logger 自动关联 threadId */
+  /** 跑一条 trace：agent.run + 状态流转（成功 done / 失败 failed）；logger 由 threadContext 自动关联 threadId */
   private async handle(trace: AgentTraceRecord) {
     this.ctx.emit('trace/status', trace.thread_id, TRACE_STATUS.PROCESSING)
-    logger.info(`[worker] 开始处理: ${trace.thread_id}`)
 
     await threadContext.run(trace.thread_id, async () => {
+      logger.info('[worker] 开始处理')
       try {
         await this.ctx.agent.run(trace.input_text, trace.thread_id)
 
         this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
         this.ctx.emit('trace/status', trace.thread_id, TRACE_STATUS.DONE)
-        logger.info(`[worker] agent run done: ${trace.thread_id}`)
+        logger.info('[worker] agent run done')
       } catch (err) {
         // agent.run 已 emit agent/error（lark 订阅回消息），这里只标记失败
         this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
         this.ctx.emit('trace/status', trace.thread_id, TRACE_STATUS.FAILED)
-        logger.error(`[worker] agent run fail: ${trace.thread_id}`, err)
+        logger.error('[worker] agent run fail', err)
       }
     })
   }

@@ -2,7 +2,6 @@ import { Service, type Context } from 'cordis'
 import * as lark from '@larksuiteoapi/node-sdk'
 import logger, { stringify } from '@/logger'
 import { assign } from '@/utils'
-import { larkBaseConfig, larkHandlers, LOGGER_LEVEL } from '@/config/lark'
 import { type LarkMessage, parseMessageContent } from './message'
 
 /**
@@ -12,18 +11,37 @@ import { type LarkMessage, parseMessageContent } from './message'
 export default class LarkService extends Service {
   static inject = ['channelLark', 'threads', 'traces']
 
+  private readonly LARK_DOMAIN = lark.Domain.Feishu
+  private readonly LOGGER_LEVEL = lark.LoggerLevel.error
   private readonly client: lark.Client
   private readonly ws: lark.WSClient
 
   constructor(ctx: Context) {
     super(ctx, 'lark')
 
-    if (!process.env.LARK_APP_ID || !process.env.LARK_APP_SECRET) {
+    const LARK_APP_ID = process.env.LARK_APP_ID
+    const LARK_APP_SECRET = process.env.LARK_APP_SECRET
+
+    if (!LARK_APP_ID || !LARK_APP_SECRET) {
       throw new Error('缺少飞书配置：请检查 LARK_APP_ID LARK_APP_SECRET')
     }
 
-    this.client = new lark.Client(assign(larkBaseConfig))
-    this.ws = new lark.WSClient(assign(larkBaseConfig, larkHandlers))
+    const larkConfig = {
+      appId: LARK_APP_ID,
+      appSecret: LARK_APP_SECRET,
+      domain: this.LARK_DOMAIN,
+      loggerLevel: this.LOGGER_LEVEL
+    }
+
+    this.client = new lark.Client(assign(larkConfig))
+    this.ws = new lark.WSClient(
+      assign(larkConfig, {
+        onReady: () => console.log('[lark] ready'),
+        onError: (error: Error) => console.error('[lark] error: ', error.message),
+        onReconnecting: () => console.warn('[lark] reconnecting…'),
+        onReconnected: () => console.log('[lark] reconnected')
+      })
+    )
 
     // 订阅注册一次（挂在 lark fiber 上，插件卸载自动撤销）；
     // 不放 start()：channel 插件 effect 重启时会重复订阅导致重复回复
@@ -69,7 +87,7 @@ export default class LarkService extends Service {
 
   private watchDispatcher() {
     const dispatcher = new lark.EventDispatcher({
-      loggerLevel: LOGGER_LEVEL
+      loggerLevel: this.LOGGER_LEVEL
     }).register({
       'im.message.receive_v1': data => {
         if (data.sender.sender_type === 'user') {

@@ -6,8 +6,6 @@ import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
 import { AIMessage, ToolMessage } from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
-import { modelConfig } from '@/config/agent'
-import { DB_PATH } from '@/config/sqlite'
 import type { ClientTool } from '@langchain/core/tools'
 import { stringify } from '@/logger'
 import { threadContext } from '@/logger/context'
@@ -25,15 +23,27 @@ export default class AgentService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'agent')
 
-    if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_BASE_URL) {
+    const API_KEY = process.env.OPENAI_API_KEY!
+    const BASE_URL = process.env.OPENAI_BASE_URL!
+    const MODEL = process.env.OPENAI_MODEL ?? 'deepseek-v4-flash'
+
+    if (!API_KEY || !BASE_URL) {
       throw new Error('缺少 LLM 配置：请在 .env 设置 OPENAI_API_KEY / OPENAI_BASE_URL')
     }
 
-    this.model = new ChatOpenAI(modelConfig)
+    this.model = new ChatOpenAI({
+      model: MODEL,
+      apiKey: API_KEY,
+      streaming: true,
+      timeout: 60_000,
+      maxRetries: 2,
+      configuration: { baseURL: BASE_URL }
+    })
     this.checkpointer = this.initCheckpointer()
   }
 
   initCheckpointer() {
+    const DB_PATH = process.env.DB_PATH ?? 'data/agent.db'
     mkdirSync(dirname(DB_PATH), { recursive: true })
 
     const checkpointer = SqliteSaver.fromConnString(DB_PATH)
