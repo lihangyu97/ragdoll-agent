@@ -19,6 +19,11 @@ export default class LarkService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'lark')
 
+    // 缺飞书配置 → 插件 FAILED（原 config/lark import 时 throw，拆副作用后挪到构造器）
+    if (!process.env.LARK_APP_ID || !process.env.LARK_APP_SECRET) {
+      throw new Error('缺少飞书配置：请检查 LARK_APP_ID LARK_APP_SECRET')
+    }
+
     this.client = new lark.Client(assign(larkBaseConfig))
     this.ws = new lark.WSClient(assign(larkBaseConfig, larkHandlers))
   }

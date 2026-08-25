@@ -1,13 +1,12 @@
 import 'dotenv/config'
 import { Domain, LoggerLevel } from '@larksuiteoapi/node-sdk'
 
-if (!process.env.LARK_APP_ID || !process.env.LARK_APP_SECRET) {
-  throw new Error('缺少飞书配置：请检查 LARK_APP_ID LARK_APP_SECRET')
-}
+// 拆 import 副作用：这里不再 throw（缺 env 由 LarkService 构造器校验 → 插件 FAILED 而非 import 崩进程）。
+// 非空断言仅用于类型收窄，运行时缺失时构造器会先抛错。
 
 // 飞书开放平台 → 开发者后台 → 你的应用 →「凭证与基础信息」
-export const LARK_APP_ID = process.env.LARK_APP_ID
-export const LARK_APP_SECRET = process.env.LARK_APP_SECRET
+export const LARK_APP_ID = process.env.LARK_APP_ID!
+export const LARK_APP_SECRET = process.env.LARK_APP_SECRET!
 
 // 国内版飞书 feishu（默认）；国际版 Lark 套件用 lark
 export const LARK_DOMAIN = process.env.LARK_DOMAIN === 'lark' ? Domain.Lark : Domain.Feishu
