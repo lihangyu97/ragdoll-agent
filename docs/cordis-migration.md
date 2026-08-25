@@ -150,4 +150,5 @@ logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite �
 - **事件只在进程内**：cordis 事件不跨进程也不持久化，DB 队列仍是跨进程/重启恢复的可靠通道；不要试图把事件做持久，worker 轮询 DB 在多进程下依然成立
 - **测试**：已切换为 `new Context()` + plugin Service 单测，`DB_PATH=:memory:` 照常工作
 - **版本**：实际使用 npm 的 **cordis `4.0.0-rc.8`**（koishi 同款），声明合并写在 `declare module 'cordis'`，已验证正常（注意：cordis 4 无 `ctx.start()`，插件加载用 `ctx.plugin()` + fiber dispose 手动收尾）
+- **yml 启动**：`pnpm start:yml`（`scripts/start-yml.ts`）经 `@cordisjs/plugin-loader` + `@cordisjs/plugin-include` 读 `cordis.yml` 装配插件树；yml 条目 `name` 指向本地 TS 模块（loader 的 import 不经 tsx 无法解析 `@/*` 别名，故入口脚本必须用 tsx 跑，不能直接用 cordis 自带 bin.js）；敏感配置用 yml 的 `!!js` 标签写环境变量表达式（`!!js process.env.X`，注意 **是 `!!js` 不是 `!js`**——js-yaml 4 里 `!js` 需要 `%TAG` 指令才能解析成自定义 tag）；退出用 `app.loader.entries()` 逆序 dispose 各 entry fiber
 - **别过度设计**：保留原生 sqlite（不上 minato / `ctx.model`）、保留 DB 队列、回复路径保持"adapter 订阅回消息"

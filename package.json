@@ -5,8 +5,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "dev:watch": "tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "start:yml": "tsx scripts/start-yml.ts",
     "seed": "tsx scripts/seed.ts",
     "test": "DB_PATH=:memory: tsx --test test/database.test.ts test/traces.test.ts test/threads.test.ts test/worker.test.ts test/turn-recorder.test.ts",
     "db:generate": "drizzle-kit generate",
@@ -40,6 +41,8 @@
     }
   },
   "dependencies": {
+    "@cordisjs/plugin-include": "1.0.4",
+    "@cordisjs/plugin-loader": "1.0.0-rc.5",
     "@langchain/core": "^1.2.8",
     "@langchain/langgraph-checkpoint-sqlite": "^1.0.3",
     "@langchain/openai": "^1.5.8",
