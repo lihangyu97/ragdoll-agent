@@ -24,18 +24,20 @@ export type AgentTraceRecord = {
   created_at: string
 }
 
-/** 插入一条消息 trace（pending） */
+/** 插入一条消息 trace（pending），返回新记录 id */
 export function insertTrace(
   threadId: string,
   messageId: string,
   chatId: string,
   inputText: string
-) {
-  safeRun(
+): number {
+  const row = safeGet<{ id: number }>(
     `INSERT INTO agent_traces (thread_id, message_id, chat_id, input_text)
-     VALUES (?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?)
+     RETURNING id`,
     [threadId, messageId, chatId, inputText]
   )
+  return row?.id ?? 0
 }
 
 /** 取最早一条 pending 的 trace */

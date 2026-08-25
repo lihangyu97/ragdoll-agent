@@ -5,6 +5,25 @@
 
 ---
 
+## 0. 当前进展（2025-08-25 更新）
+
+已落地（`pnpm typecheck` + `pnpm test` 全绿，`pnpm dev` 冒烟正常）：
+
+- **agent Service**（`src/services/agent/AgentService.ts`）：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播 `agent/input` / `agent/tool-call` / `agent/tool-result` / `agent/result` / `agent/error` 五个类型化事件（声明合并进 `cordis` 的 `Events`）；`registerTools()` / `setSystemPrompt()` 作为 tools/prompt 注册点；config 校验挪进构造器（缺 env 插件 FAILED 而非 import 崩进程）
+- **demo 插件**（`src/plugins/agent-demo.ts`）：加载即把 `@/toy/tools`、`@/toy/systemPrompt` 注入 agent，`inject: ['agent']`
+- **lark 打通**（`src/services/lark/LarkService.ts`）：入站全流程（落库 channel_lark → ensureThread → insertTrace → 抢占 processing → `ctx.agent.run` → done/failed），订阅 `agent/result`/`agent/error` 反查 processing trace 回消息；每 thread 串行队列避免并发回复错乱
+- `insertTrace` 改为 `RETURNING id` 返回 trace id（原调用方不受影响）
+- 根入口（`src/index.ts`）：`initSchema()` + 装配 AgentService / agent-demo / LarkService / channel
+
+**遗留（下一步）**：
+
+- worker 插件未落地：当前 lark 内联跑 agent（`LarkService.processTrace` 有 TODO），worker 插件落地后改回"只入队 + 轮询抢锁"
+- 旧代码（`src/agent/*`、`src/worker`、`src/channels/lark`、`src/application`、`src/toy/demo.ts`、`src/toy/loggerHooks.ts`）仍是死代码，按 AGENST 未删，等对应插件落地时清理
+- sqlite 各层尚未包成 Service（database/traces/threads…），`initSchema` 暂留根上
+- turn-recorder 插件未做（订阅 agent/* 写 agent_turns）
+
+---
+
 ## 1. 背景与目标
 
 当前仓库是一个"学习用 agent 项目"：飞书消息 → SQLite 队列 → LangGraph agent 执行 → 回消息。

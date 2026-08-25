@@ -12,3 +12,12 @@ if (!process.env.OPENAI_MODEL) {
 export const API_KEY = process.env.OPENAI_API_KEY
 export const BASE_URL = process.env.OPENAI_BASE_URL
 export const MODEL = process.env.OPENAI_MODEL ?? 'deepseek-v4-flash'
+
+export const modelConfig = {
+  model: MODEL,
+  apiKey: API_KEY,
+  streaming: true,
+  timeout: 60_000,
+  maxRetries: 2,
+  configuration: { baseURL: BASE_URL }
+}
