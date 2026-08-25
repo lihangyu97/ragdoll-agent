@@ -26,10 +26,13 @@ export default class LarkService extends Service {
 
     this.client = new lark.Client(assign(larkBaseConfig))
     this.ws = new lark.WSClient(assign(larkBaseConfig, larkHandlers))
+
+    // 订阅注册一次（挂在 lark fiber 上，插件卸载自动撤销）；
+    // 不放 start()：channel 插件 effect 重启时会重复订阅导致重复回复
+    this.watchAgentLoop()
   }
 
   async start() {
-    this.watchAgentLoop()
     this.watchDispatcher()
   }
 

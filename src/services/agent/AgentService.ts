@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import 'dotenv/config'
 import { Service, type Context } from 'cordis'
 import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
@@ -9,7 +10,7 @@ import { modelConfig } from '@/config/agent'
 import { DB_PATH } from '@/config/sqlite'
 import type { ClientTool } from '@langchain/core/tools'
 import { stringify } from '@/logger'
-import 'dotenv/config'
+import { threadContext } from '@/logger/context'
 
 /** agent 单次执行的整体超时（毫秒）：覆盖多轮 LLM + 工具循环，超时通过 signal abort */
 const AGENT_RUN_TIMEOUT_MS = 5 * 60_000
@@ -55,43 +56,46 @@ export default class AgentService extends Service {
   }
 
   async run(input: string, threadId: string): Promise<void> {
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      controller.abort()
-    }, AGENT_RUN_TIMEOUT_MS)
+    // logger 自动关联 threadId（agent 层自管上下文；worker 外层包裹与之嵌套，值相同无害）
+    await threadContext.run(threadId, async () => {
+      const controller = new AbortController()
+      const timer = setTimeout(() => {
+        controller.abort()
+      }, AGENT_RUN_TIMEOUT_MS)
 
-    try {
-      const agent = this.ensureAgent()
-      this.ctx.emit('agent/input', threadId, input)
+      try {
+        const agent = this.ensureAgent()
+        this.ctx.emit('agent/input', threadId, input)
 
-      const stream = await agent.stream(
-        { messages: [{ role: 'user', content: input }] },
-        {
-          streamMode: 'updates',
-          signal: controller.signal,
-          configurable: { thread_id: threadId }
-        }
-      )
+        const stream = await agent.stream(
+          { messages: [{ role: 'user', content: input }] },
+          {
+            streamMode: 'updates',
+            signal: controller.signal,
+            configurable: { thread_id: threadId }
+          }
+        )
 
-      for await (const step of stream) {
-        for (const [node, update] of Object.entries(step)) {
-          for (const msg of update.messages ?? []) {
-            if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
-              this.ctx.emit('agent/tool-call', threadId, node, msg)
-            } else if (ToolMessage.isInstance(msg)) {
-              this.ctx.emit('agent/tool-result', threadId, node, msg)
-            } else {
-              this.ctx.emit('agent/result', threadId, node, msg)
+        for await (const step of stream) {
+          for (const [node, update] of Object.entries(step)) {
+            for (const msg of update.messages ?? []) {
+              if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
+                this.ctx.emit('agent/tool-call', threadId, node, msg)
+              } else if (ToolMessage.isInstance(msg)) {
+                this.ctx.emit('agent/tool-result', threadId, node, msg)
+              } else {
+                this.ctx.emit('agent/result', threadId, node, msg)
+              }
             }
           }
         }
+      } catch (err) {
+        this.ctx.emit('agent/error', threadId, stringify(err))
+        throw err
+      } finally {
+        clearTimeout(timer)
       }
-    } catch (err) {
-      this.ctx.emit('agent/error', threadId, stringify(err))
-      throw err
-    } finally {
-      clearTimeout(timer)
-    }
+    })
   }
 
   private ensureAgent(): ReturnType<typeof createAgent> {
