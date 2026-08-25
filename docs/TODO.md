@@ -47,3 +47,14 @@
 **明确不用加**：`channel_lark_user.open_id` / 各表 PK 已由 UNIQUE/主键约束隐式建索引；`channel_lark`、`logger` 应用里只 insert，显示工具的 ad-hoc 查询不需要索引。
 
 **决策**：暂不加，等数据量真上来了（或显示工具出现明显慢查询）再落到 `DatabaseService.initSchema` 的 `CREATE INDEX IF NOT EXISTS`（跟随现有清库重建流程，无迁移）。
+
+## worker 多实例：无主 trace 心跳租约回收（方案已定，实施待定）
+
+**背景**：现实现"启动时 + 静态阈值（10min）"回收（`resetStaleProcessingTraces`）有两个局限——
+阈值必须大于合法运行时长，agent 一轮若超 10min 则恢复延迟同步变大；且只覆盖启动场景，
+覆盖不到"运行期间实例崩溃、其他实例还活着"。完整方案见 `docs/worker-multi-instance.md`。
+
+- [ ] 心跳租约：`agent_traces` 加 `heartbeat_at`，处理期间每 30s 刷新；90s 未更新判死回收
+- [ ] 回收从"仅启动时"升级为"周期 sweep"（每次 poll 或独立 60s 定时器），多实例安全
+- [ ] 实施时机：上多实例（pm2）时与部署一起做；真长任务时 `AGENT_RUN_TIMEOUT_MS` 可配置化
+- [ ] 注意：恢复 = 至少一次语义，工具副作用需幂等（见方案 §4）
