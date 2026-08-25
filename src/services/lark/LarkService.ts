@@ -3,7 +3,17 @@ import * as lark from '@larksuiteoapi/node-sdk'
 import { z } from 'zod'
 import logger from '@/utils/logger'
 import { assign, stringify } from '@/utils'
-import { type LarkMessage, parseMessageContent } from './message'
+import { type LarkMessage, parseMessageContent, resolveThreadId } from './message'
+
+declare module 'cordis' {
+  interface Context {
+    lark: LarkService
+  }
+  interface Events {
+    /** lark 收到消息、解析完、落库入队后广播；将来加 web/console 渠道时同一事件 */
+    'message/received': (threadId: string, content: string) => void
+  }
+}
 
 /**
  * lark adapter Service：入站（WS 长连接收消息、落库入队）+ 出站（replyToMessage 等能力）。
@@ -62,24 +72,31 @@ export default class LarkService extends Service {
     })
   }
 
+  /** 统一处理回复失败：记日志不抛出（回复失败不应中断事件流/主流程） */
+  private useReplayCatch(threadId: string, callback: () => Promise<unknown>) {
+    return callback().catch((error: unknown) => {
+      logger.error('[lark] 回复失败: ', { threadId, error: stringify(error) })
+    })
+  }
+
   private watchAgentLoop() {
     this.ctx.on('agent/result', (threadId, _node, msg) => {
-      if (typeof msg.content !== 'string' || !msg.content) {
+      const content = msg.content
+      if (typeof content !== 'string' || !content) {
         logger.error('[lark] 消息格式异常: ', { threadId, msg })
         return
       }
       const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
       if (!trace) return
-      this.replyToMessage(trace.messageId, msg.content).catch(err =>
-        logger.error('[lark] 回复失败: ', { threadId, error: stringify(err) })
-      )
+
+      this.useReplayCatch(threadId, () => this.replyToMessage(trace.messageId, content))
     })
 
     this.ctx.on('agent/error', (threadId, error) => {
       const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
       if (!trace) return
-      this.replyToMessage(trace.messageId, `⚠️ Agent 处理失败：${error}`).catch(err =>
-        logger.error('[lark] 错误回复失败: ', { threadId, error: stringify(err) })
+      this.useReplayCatch(threadId, () =>
+        this.replyToMessage(trace.messageId, `Agent 处理失败：${error}`)
       )
     })
   }
@@ -104,9 +121,7 @@ export default class LarkService extends Service {
     const stringifyMsg = stringify(msg)
     console.log('🤖 收到飞书消息: ', stringifyMsg)
 
-    const content = parseMessageContent(msg)
-
-    const threadId = this.resolveThreadId(msg)
+    const threadId = resolveThreadId(msg)
     if (!threadId) {
       logger.error('无 threadId 无法确认场景', stringifyMsg)
       return
@@ -117,6 +132,7 @@ export default class LarkService extends Service {
     const openId = msg.sender.sender_id?.open_id
 
     const senderName = openId ? await this.getUserName(openId) : 'unknown'
+    const content = parseMessageContent(msg)
 
     this.ctx.channelLark.insertLarkMessage({
       eventType: msg.event_type ?? '',
@@ -138,18 +154,7 @@ export default class LarkService extends Service {
 
     this.ctx.emit('message/received', threadId, content)
 
-    await this.replyToMessage(messageId, '🤔 正在思考中…')
-  }
-
-  private resolveThreadId(msg: LarkMessage): string | null {
-    if (msg.message.chat_type === 'p2p') {
-      return msg.message.chat_id
-    }
-    if (msg.message.chat_type === 'group' && msg.message.thread_id) {
-      return msg.message.thread_id
-    }
-
-    return null // 不支持的场景
+    this.useReplayCatch(threadId, () => this.replyToMessage(messageId, '🤔 正在思考中…'))
   }
 
   private async getUserName(openId: string): Promise<string> {

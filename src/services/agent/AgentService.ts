@@ -4,11 +4,25 @@ import { Service, type Context } from 'cordis'
 import { z } from 'zod'
 import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
-import { AIMessage, ToolMessage } from '@langchain/core/messages'
+import { AIMessage, ToolMessage, BaseMessage } from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import type { ClientTool } from '@langchain/core/tools'
 import { stringify } from '@/utils'
 import { threadContext } from '@/utils/context'
+
+declare module 'cordis' {
+  interface Context {
+    agent: AgentService
+  }
+  interface Events {
+    'agent/input': (threadId: string, input: string) => void
+    'agent/tool-call': (threadId: string, node: string, msg: AIMessage) => void
+    'agent/tool-result': (threadId: string, node: string, msg: ToolMessage) => void
+    'agent/result': (threadId: string, node: string, msg: BaseMessage) => void
+    'agent/error': (threadId: string, error: string) => void
+    'agent/timeout': (threadId: string) => void
+  }
+}
 
 /** agent 单次执行的整体超时（毫秒）：覆盖多轮 LLM + 工具循环，超时通过 signal abort */
 const AGENT_RUN_TIMEOUT_MS = 5 * 60_000
@@ -68,6 +82,7 @@ export default class AgentService extends Service {
       const controller = new AbortController()
       const timer = setTimeout(() => {
         controller.abort()
+        this.ctx.emit('agent/timeout', threadId)
       }, AGENT_RUN_TIMEOUT_MS)
 
       try {

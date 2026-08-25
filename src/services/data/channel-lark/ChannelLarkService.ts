@@ -4,6 +4,12 @@ import { channelLark, channelLarkUser } from '@/services/data/database/schema'
 
 export type ChannelLarkRecord = typeof channelLark.$inferInsert
 
+declare module 'cordis' {
+  interface Context {
+    channelLark: ChannelLarkService
+  }
+}
+
 /** channelLark Service：飞书消息与用户缓存 repository */
 export default class ChannelLarkService extends Service {
   static inject = ['database']

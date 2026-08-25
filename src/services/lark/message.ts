@@ -136,3 +136,14 @@ export function parseMessageContent(msg: LarkMessage): string {
       return content
   }
 }
+
+export function resolveThreadId(msg: LarkMessage): string | null {
+  if (msg.message.chat_type === 'p2p') {
+    return msg.message.chat_id
+  }
+  if (msg.message.chat_type === 'group' && msg.message.thread_id) {
+    return msg.message.thread_id
+  }
+
+  return null // 不支持的场景
+}

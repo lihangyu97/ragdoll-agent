@@ -6,6 +6,12 @@ export type { ThreadStatus } from '@/services/data/database/schema'
 
 export type AgentThreadRecord = typeof agentThreads.$inferSelect
 
+declare module 'cordis' {
+  interface Context {
+    threads: ThreadsService
+  }
+}
+
 /** threads Service：agent_threads 会话线程 repository */
 export default class ThreadsService extends Service {
   static inject = ['database']

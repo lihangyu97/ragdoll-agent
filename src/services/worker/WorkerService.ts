@@ -1,7 +1,22 @@
 import { Service, type Context } from 'cordis'
-import { TRACE_STATUS, type AgentTraceRecord } from '@/services/data/traces/TracesService'
+import {
+  TRACE_STATUS,
+  type AgentTraceRecord,
+  type TraceStatus
+} from '@/services/data/traces/TracesService'
+
 import logger from '@/utils/logger'
 import { threadContext } from '@/utils/context'
+
+declare module 'cordis' {
+  interface Context {
+    worker: WorkerService
+  }
+  interface Events {
+    /** worker 状态流转 pending→processing→done/failed，观察/审计用，避免别人轮询 DB */
+    'trace/status': (threadId: string, status: TraceStatus) => void
+  }
+}
 
 /** 轮询间隔（毫秒）：每个 tick 内把队列消费到空，运行中新消息最多延迟一个间隔 */
 const POLL_INTERVAL_MS = 3_000

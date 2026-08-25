@@ -7,6 +7,12 @@ export type AgentTurnRecord = typeof agentTurns.$inferSelect
 /** 插入一行 turn 记录所需字段（id / createdAt 由数据库生成） */
 export type InsertTurnParams = Omit<AgentTurnRecord, 'id' | 'createdAt'>
 
+declare module 'cordis' {
+  interface Context {
+    turns: TurnsService
+  }
+}
+
 /** turns Service：agent_turns 每轮轨迹 repository（由 turn-recorder 插件写入） */
 export default class TurnsService extends Service {
   static inject = ['database']

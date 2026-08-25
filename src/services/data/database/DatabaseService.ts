@@ -4,6 +4,12 @@ import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { getDb } from '@/utils/sqlite'
 
+declare module 'cordis' {
+  interface Context {
+    database: DatabaseService
+  }
+}
+
 /**
  * database Service：单例连接 + 暴露 drizzle 实例 + 应用 schema 迁移（drizzle-kit 生成，见 drizzle/）。
  * 表结构唯一来源是 database/schema.ts，改表 = 改 schema → `pnpm exec drizzle-kit generate`（表结构变更后清库）。

@@ -7,6 +7,12 @@ export type { TraceStatus } from '@/services/data/database/schema'
 
 export type AgentTraceRecord = typeof agentTraces.$inferSelect
 
+declare module 'cordis' {
+  interface Context {
+    traces: TracesService
+  }
+}
+
 /**
  * traces Service：agent_traces 队列能力（enqueue / 抢锁 / 状态流转）。
  * lark 生产、worker 消费，两边注入。drizzle better-sqlite3 为同步驱动。
