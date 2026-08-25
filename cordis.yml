@@ -1,0 +1,59 @@
+# Cordis 应用配置：声明整棵插件树（services + plugins）。
+# 由 scripts/start-yml.ts 启动（pnpm start:yml），经 @cordisjs/plugin-loader 加载本文件。
+#
+# 约定：
+# - 每个条目 = 一个插件/Service；name 指向本地 TS 模块（相对项目根），config 传给该插件
+# - 依赖自动解析：插件声明的 inject（如 agent、database）由 loader 决定挂载顺序
+# - 敏感配置不落盘：用 yml 的 !!js 标签写 JS 表达式，从环境变量读取（!!js process.env.XXX）
+# - 缺环境变量 → 该插件 config 校验失败 → 插件 FAILED（原因会打印到控制台）
+# - 每个条目带 id，便于 loader 做配置 diff / HMR；禁用某插件 = 加 disabled: true
+
+- id: database
+  name: ./src/services/data/database/DatabaseService.ts
+  config:
+    dbPath: !!js process.env.DB_PATH ?? 'data/agent.db'
+
+- id: traces
+  name: ./src/services/data/traces/TracesService.ts
+
+- id: threads
+  name: ./src/services/data/threads/ThreadsService.ts
+
+- id: turns
+  name: ./src/services/data/turns/TurnsService.ts
+
+- id: channel-lark
+  name: ./src/services/data/channel-lark/ChannelLarkService.ts
+
+- id: agent
+  name: ./src/services/agent/AgentService.ts
+  config:
+    apiKey: !!js process.env.OPENAI_API_KEY
+    baseUrl: !!js process.env.OPENAI_BASE_URL
+    model: !!js process.env.OPENAI_MODEL ?? 'deepseek-v4-flash'
+    dbPath: !!js process.env.DB_PATH ?? 'data/agent.db'
+
+- id: agent-demo
+  name: ./src/plugins/agent-demo.ts
+
+- id: lark
+  name: ./src/services/lark/LarkService.ts
+  config:
+    appId: !!js process.env.LARK_APP_ID
+    appSecret: !!js process.env.LARK_APP_SECRET
+    domain: !!js process.env.LARK_DOMAIN ?? 'feishu'
+
+- id: channel
+  name: ./src/plugins/channel.ts
+
+- id: worker
+  name: ./src/services/worker/WorkerService.ts
+
+- id: worker-plugin
+  name: ./src/plugins/worker.ts
+
+- id: turn-recorder
+  name: ./src/plugins/turn-recorder.ts
+
+- id: console-demo
+  name: ./src/plugins/console-demo.ts
