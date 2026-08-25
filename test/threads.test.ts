@@ -3,8 +3,8 @@ process.env.DB_PATH = ':memory:'
 import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from 'cordis'
-import DatabaseService from '../src/services/database/DatabaseService'
-import ThreadsService, { THREAD_STATUS } from '../src/services/threads/ThreadsService'
+import DatabaseService from '../src/services/data/database/DatabaseService'
+import ThreadsService, { THREAD_STATUS } from '../src/services/data/threads/ThreadsService'
 
 const ctx = new Context()
 ctx.plugin(DatabaseService, { dbPath: ':memory:' })

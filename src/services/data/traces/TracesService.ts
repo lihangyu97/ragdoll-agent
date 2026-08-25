@@ -1,5 +1,5 @@
 import { Service, type Context } from 'cordis'
-import type DatabaseService from '@/services/database/DatabaseService'
+import type DatabaseService from '@/services/data/database/DatabaseService'
 
 /** agent_traces.status：消息执行轨迹状态（唯一事实来源，禁止魔法字符串） */
 export const TRACE_STATUS = {

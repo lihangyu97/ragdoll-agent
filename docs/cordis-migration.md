@@ -9,10 +9,9 @@
 
 `pnpm typecheck` + `pnpm test`（28 用例）全绿；`pnpm dev` 冒烟 + 真实 LLM 链路验证通过（插入 pending trace → worker 消费 done → 工具调用链 → agent/result 触发 lark 回复 + turn-recorder 写入轮次记录）。
 
-**Services**（各带 `static inject` 声明依赖；实现见 `src/services/*`）：
+**Services**（各带 `static inject` 声明依赖；实现见 `src/services/*`，数据层在 `src/services/data/`）：
 
-- **`database`**：收编 `sqlite/base`（连接 getDb + 构造时建表 initSchema + safe run/get/all + 错误分级 classifySqliteError）
-- **`traces` / `threads` / `turns` / `channelLark`**：原 `sqlite/agentTraces` 等 1:1 平移，注入 database；`TRACE_STATUS` / `THREAD_STATUS` 常量随 Service 导出
+- **数据层**（`src/services/data/`）：**`database`**（连接 getDb + 构造时建表 initSchema + safe run/get/all + 错误分级 classifySqliteError）、**`traces` / `threads` / `turns` / `channelLark`**（原 `sqlite/agentTraces` 等 1:1 平移的薄 repository，注入 database；`TRACE_STATUS` / `THREAD_STATUS` 常量随 Service 导出）
 - **`agent`**：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播五个 `agent/*` 类型化事件；`registerTools()` / `setSystemPrompt()` 作为 tools/prompt 注册点
 - **`lark`**：入站生产（落库 channel_lark → ensureThread → insertTrace → 回"正在思考"）+ 出站（replyToMessage）；订阅 `agent/result`/`agent/error` 反查 processing trace 回消息
 - **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → `ctx.agent.run` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底（`resetStaleProcessingTraces`）暂不做

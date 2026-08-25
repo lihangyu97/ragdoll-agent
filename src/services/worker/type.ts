@@ -1,5 +1,5 @@
 import WorkerService from './WorkerService'
-import type { TraceStatus } from '@/services/traces/TracesService'
+import type { TraceStatus } from '@/services/data/traces/TracesService'
 
 declare module 'cordis' {
   interface Context {

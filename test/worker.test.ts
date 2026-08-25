@@ -5,9 +5,9 @@ import assert from 'node:assert/strict'
 import { Context } from 'cordis'
 import { Service } from 'cordis'
 import { AIMessage } from '@langchain/core/messages'
-import DatabaseService from '../src/services/database/DatabaseService'
-import ThreadsService from '../src/services/threads/ThreadsService'
-import TracesService, { TRACE_STATUS, type TraceStatus } from '../src/services/traces/TracesService'
+import DatabaseService from '../src/services/data/database/DatabaseService'
+import ThreadsService from '../src/services/data/threads/ThreadsService'
+import TracesService, { TRACE_STATUS, type TraceStatus } from '../src/services/data/traces/TracesService'
 import WorkerService from '../src/services/worker/WorkerService'
 
 /** mock agent：记录调用，正常时 emit agent/* 事件，可配置失败 / 可配置挂起等待放行 */

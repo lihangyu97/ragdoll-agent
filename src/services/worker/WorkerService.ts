@@ -1,5 +1,5 @@
 import { Service, type Context } from 'cordis'
-import { TRACE_STATUS, type AgentTraceRecord } from '@/services/traces/TracesService'
+import { TRACE_STATUS, type AgentTraceRecord } from '@/services/data/traces/TracesService'
 import logger from '@/utils/logger'
 import { threadContext } from '@/utils/context'
 

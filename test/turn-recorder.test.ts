@@ -4,8 +4,8 @@ import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from 'cordis'
 import { AIMessage, ToolMessage } from '@langchain/core/messages'
-import DatabaseService from '../src/services/database/DatabaseService'
-import TurnsService from '../src/services/turns/TurnsService'
+import DatabaseService from '../src/services/data/database/DatabaseService'
+import TurnsService from '../src/services/data/turns/TurnsService'
 import turnRecorder from '../src/plugins/turn-recorder'
 
 const ctx = new Context()

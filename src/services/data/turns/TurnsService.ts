@@ -1,5 +1,5 @@
 import { Service, type Context } from 'cordis'
-import type DatabaseService from '@/services/database/DatabaseService'
+import type DatabaseService from '@/services/data/database/DatabaseService'
 
 /** agent_turns 表的一行记录（表结构见 DatabaseService.initSchema） */
 export type AgentTurnRecord = {

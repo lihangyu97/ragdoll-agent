@@ -3,7 +3,7 @@ process.env.DB_PATH = ':memory:'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from 'cordis'
-import DatabaseService from '../src/services/database/DatabaseService'
+import DatabaseService from '../src/services/data/database/DatabaseService'
 
 const ctx = new Context()
 await ctx.plugin(DatabaseService, { dbPath: ':memory:' })

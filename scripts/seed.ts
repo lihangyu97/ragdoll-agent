@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { Context } from 'cordis'
-import DatabaseService from '@/services/database/DatabaseService'
-import ChannelLarkService from '@/services/channel-lark/ChannelLarkService'
+import DatabaseService from '@/services/data/database/DatabaseService'
+import ChannelLarkService from '@/services/data/channel-lark/ChannelLarkService'
 
 /**
  * 种子用户脚本：删库（rm data/agent.db*）后执行 `pnpm seed`，
