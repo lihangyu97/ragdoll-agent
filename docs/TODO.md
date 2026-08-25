@@ -14,7 +14,7 @@
 
 ## SQL 访问层错误处理 ✅（已实现；迁移后收编进 `database` Service）
 
-**背景**：`node:sqlite`（DatabaseSync）是同步 API，`prepare/run/get` 出错会**同步 throw**。
+**背景（2025-08 已换 better-sqlite3 + Drizzle）**：`node:sqlite`（DatabaseSync）是同步 API，`prepare/run/get` 出错会**同步 throw**。
 之前所有查询函数都没包 try/catch，一旦触发就是 unhandled rejection → Node 24 默认崩进程。
 （曾出现真实报错：旧库 `agent_threads` 表缺 `sender_open_id` 列，`ensureThread` 插入时 throw。）
 

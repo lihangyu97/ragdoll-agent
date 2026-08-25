@@ -43,16 +43,16 @@ function record(
   if (!turn || turn.threadId !== threadId) return
   const isToolResult = hookType === 'TOOL_RESULT'
   ctx.turns.insertTurn({
-    thread_id: threadId,
-    turn_no: turn.turnNo,
-    hook_type: hookType,
+    threadId,
+    turnNo: turn.turnNo,
+    hookType,
     node: node ?? null,
-    msg_type: msg?.type ?? null,
-    tool_call_id: extractToolCallId(msg),
-    tool_calls:
+    msgType: msg?.type ?? null,
+    toolCallId: extractToolCallId(msg),
+    toolCalls:
       AIMessage.isInstance(msg) && msg.tool_calls?.length ? JSON.stringify(msg.tool_calls) : null,
     content: isToolResult ? null : content || null,
-    tools_result: isToolResult ? content || null : null
+    toolsResult: isToolResult ? content || null : null
   })
 }
 

@@ -7,7 +7,12 @@ import { Service } from 'cordis'
 import { AIMessage } from '@langchain/core/messages'
 import DatabaseService from '../src/services/data/database/DatabaseService'
 import ThreadsService from '../src/services/data/threads/ThreadsService'
-import TracesService, { TRACE_STATUS, type TraceStatus } from '../src/services/data/traces/TracesService'
+import TracesService, {
+  TRACE_STATUS,
+  type TraceStatus
+} from '../src/services/data/traces/TracesService'
+import { agentTraces } from '../src/services/data/database/schema'
+import { eq } from 'drizzle-orm'
 import WorkerService from '../src/services/worker/WorkerService'
 
 /** mock agent：记录调用，正常时 emit agent/* 事件，可配置失败 / 可配置挂起等待放行 */
@@ -43,8 +48,8 @@ beforeEach(() => {
   MockAgentService.calls = []
   MockAgentService.failNext = false
   MockAgentService.gate = null
-  ctx.database.run('DELETE FROM agent_traces')
-  ctx.database.run('DELETE FROM agent_threads')
+  ctx.database.exec('DELETE FROM agent_traces')
+  ctx.database.exec('DELETE FROM agent_threads')
   ctx.worker.stop()
 })
 
@@ -69,10 +74,11 @@ test('worker 消费 pending trace → done，且广播 trace/status', async () =
 
   ctx.worker.start()
   await waitUntil(() => {
-    const row = ctx.database.get<{ status: string }>(
-      `SELECT status FROM agent_traces WHERE id = ?`,
-      [traceId]
-    )
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
     return row?.status === TRACE_STATUS.DONE
   })
 
@@ -91,10 +97,11 @@ test('worker run 失败 → trace failed，且广播 trace/status', async () => 
 
   ctx.worker.start()
   await waitUntil(() => {
-    const row = ctx.database.get<{ status: string }>(
-      `SELECT status FROM agent_traces WHERE id = ?`,
-      [traceId]
-    )
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
     return row?.status === TRACE_STATUS.FAILED
   })
 
@@ -121,10 +128,11 @@ test('防重入：上一轮未完成时再次 start 不重复消费', async t =>
   ctx.worker.start()
   // 旧 poll 已抢锁（processing 状态）并挂在 gate 上
   await waitUntil(() => {
-    const row = ctx.database.get<{ status: string }>(
-      `SELECT status FROM agent_traces WHERE id = ?`,
-      [traceId]
-    )
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
     return row?.status === TRACE_STATUS.PROCESSING
   })
 
@@ -133,10 +141,11 @@ test('防重入：上一轮未完成时再次 start 不重复消费', async t =>
 
   release() // 放行旧 run
   await waitUntil(() => {
-    const row = ctx.database.get<{ status: string }>(
-      `SELECT status FROM agent_traces WHERE id = ?`,
-      [traceId]
-    )
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
     return row?.status === TRACE_STATUS.DONE
   })
 

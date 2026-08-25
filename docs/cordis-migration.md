@@ -11,7 +11,7 @@
 
 **Services**（各带 `static inject` 声明依赖；实现见 `src/services/*`，数据层在 `src/services/data/`）：
 
-- **数据层**（`src/services/data/`）：**`database`**（连接 getDb + 构造时建表 initSchema + safe run/get/all + 错误分级 classifySqliteError）、**`traces` / `threads` / `turns` / `channelLark`**（原 `sqlite/agentTraces` 等 1:1 平移的薄 repository，注入 database；`TRACE_STATUS` / `THREAD_STATUS` 常量随 Service 导出）
+- **数据层**（`src/services/data/`）：**`database`**（better-sqlite3 连接 getDb + 暴露 drizzle 实例，构造时 `migrate` 应用 schema 迁移）、**`traces` / `threads` / `turns` / `channelLark`**（薄 repository，内部查询用 drizzle（同步 builder：`.all()/.get()/.run()`），注入 database；`TRACE_STATUS` / `THREAD_STATUS` 常量与表定义统一在 `database/schema.ts`）
 - **`agent`**：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播五个 `agent/*` 类型化事件；`registerTools()` / `setSystemPrompt()` 作为 tools/prompt 注册点
 - **`lark`**：入站生产（落库 channel_lark → ensureThread → insertTrace → 回"正在思考"）+ 出站（replyToMessage）；订阅 `agent/result`/`agent/error` 反查 processing trace 回消息
 - **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → `ctx.agent.run` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底（`resetStaleProcessingTraces`）暂不做
@@ -53,7 +53,7 @@
 
 | 原模块                                               | cordis 角色                                               | 状态       | 说明                                                                                                        |
 | ---------------------------------------------------- | --------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| `sqlite/base`（db/schema/safe）                      | **`database` Service**                                    | ✅         | 连接 + 建表 + safe 执行 + 错误分级                                                                          |
+| `sqlite/base`（db/schema/safe）                      | **`database` Service**（已换 Drizzle）                    | ✅         | better-sqlite3 连接 + drizzle 查询实例；建表走 `drizzle-kit generate` + 运行时 `migrate`（safe 层退役）     |
 | `sqlite/agentTraces`                                 | **`traces` Service**                                      | ✅         | 队列能力：enqueue / 抢锁 / 状态流转                                                                         |
 | `sqlite/agentThreads` / `agentTurns` / `channelLark` | `threads` / `turns` / `channelLark` Service               | ✅         | 1:1 repository                                                                                              |
 | `logger` + `logger/context`                          | 并入 `@/utils/logger` **模块**（非 Service）              | ✅（决策） | cordis 内置 `ctx.logger` 占名；按待决问题"倾向保留自定义"处理，改动最小；`AsyncLocalStorage` 线程上下文保留 |
@@ -146,7 +146,7 @@ logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite �
 - **inject 必须声明（已踩）**：插件/Service 的 fiber 上下文访问其他 service 必须声明 `inject`，否则 `ctx.xxx` 抛 `cannot get property "xxx" without inject`——Service 类用 `static inject = [...]`，普通插件对象用 `inject: [...]` 字段
 - **cordis 4 rc 内置 logger 默认静默（已踩）**：`ctx.logger` 只把消息推进缓冲，不输出 console；插件 FAILED 的错误会被吞掉。根上注册 `ctx.logger.exporter`（error/warn 打到 console）才能看到原因
 - **import 时副作用**：已拆（`src/config/` 目录删除，配置内联/Config 化）；缺配置由 cordis Config（zod）校验 → 插件 FAILED（ValidationError 列出字段）且 console 可见
-- **双连接问题仍在**：`getDb()` 单例和 agent checkpointer（SqliteSaver）各自持有 SQLite 连接（WAL + busy_timeout 已有），cordis 不解决，文档说明即可
+- **双连接问题仍在**：`getDb()` 单例（better-sqlite3）和 agent checkpointer（SqliteSaver）各自持有 SQLite 连接（WAL + busy_timeout 已有），cordis 不解决，文档说明即可
 - **事件只在进程内**：cordis 事件不跨进程也不持久化，DB 队列仍是跨进程/重启恢复的可靠通道；不要试图把事件做持久，worker 轮询 DB 在多进程下依然成立
 - **测试**：已切换为 `new Context()` + plugin Service 单测，`DB_PATH=:memory:` 照常工作
 - **版本**：实际使用 npm 的 **cordis `4.0.0-rc.8`**（koishi 同款），声明合并写在 `declare module 'cordis'`，已验证正常（注意：cordis 4 无 `ctx.start()`，插件加载用 `ctx.plugin()` + fiber dispose 手动收尾）

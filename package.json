@@ -9,6 +9,8 @@
     "dev:watch": "tsx watch src/index.ts",
     "seed": "tsx scripts/seed.ts",
     "test": "DB_PATH=:memory: tsx --test test/database.test.ts test/traces.test.ts test/threads.test.ts test/worker.test.ts test/turn-recorder.test.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -21,7 +23,9 @@
     "*": "prettier --write --ignore-unknown"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.0.0",
+    "drizzle-kit": "^0.31.10",
     "lint-staged": "^17.3.0",
     "prettier": "^3.9.6",
     "simple-git-hooks": "^2.13.1",
@@ -40,8 +44,10 @@
     "@langchain/langgraph-checkpoint-sqlite": "^1.0.3",
     "@langchain/openai": "^1.5.8",
     "@larksuiteoapi/node-sdk": "^1.73.0",
+    "better-sqlite3": "^13.0.3",
     "cordis": "4.0.0-rc.8",
     "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
     "langchain": "^1.5.9",
     "zod": "^4.4.3"
   }

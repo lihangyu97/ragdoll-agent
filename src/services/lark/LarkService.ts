@@ -70,7 +70,7 @@ export default class LarkService extends Service {
       }
       const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
       if (!trace) return
-      this.replyToMessage(trace.message_id, msg.content).catch(err =>
+      this.replyToMessage(trace.messageId, msg.content).catch(err =>
         logger.error('[lark] 回复失败: ', { threadId, error: stringify(err) })
       )
     })
@@ -78,7 +78,7 @@ export default class LarkService extends Service {
     this.ctx.on('agent/error', (threadId, error) => {
       const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
       if (!trace) return
-      this.replyToMessage(trace.message_id, `⚠️ Agent 处理失败：${error}`).catch(err =>
+      this.replyToMessage(trace.messageId, `⚠️ Agent 处理失败：${error}`).catch(err =>
         logger.error('[lark] 错误回复失败: ', { threadId, error: stringify(err) })
       )
     })
@@ -119,16 +119,16 @@ export default class LarkService extends Service {
     const senderName = openId ? await this.getUserName(openId) : 'unknown'
 
     this.ctx.channelLark.insertLarkMessage({
-      event_type: msg.event_type ?? '',
-      app_id: msg.app_id ?? '',
-      chat_id: chatId,
-      chat_type: msg.message.chat_type,
-      message_id: messageId,
-      message_type: msg.message.message_type,
-      thread_id: msg.message.thread_id ?? null,
-      sender_open_id: openId ?? null,
-      sender_type: msg.sender.sender_type,
-      sender_name: senderName,
+      eventType: msg.event_type ?? '',
+      appId: msg.app_id ?? '',
+      chatId,
+      chatType: msg.message.chat_type,
+      messageId,
+      messageType: msg.message.message_type,
+      threadId: msg.message.thread_id ?? null,
+      senderOpenId: openId ?? null,
+      senderType: msg.sender.sender_type,
+      senderName,
       content
     })
 

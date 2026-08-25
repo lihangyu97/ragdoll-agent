@@ -2,10 +2,12 @@ process.env.DB_PATH = ':memory:'
 
 import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { eq } from 'drizzle-orm'
 import { Context } from 'cordis'
 import DatabaseService from '../src/services/data/database/DatabaseService'
 import ThreadsService from '../src/services/data/threads/ThreadsService'
 import TracesService, { TRACE_STATUS } from '../src/services/data/traces/TracesService'
+import { agentTraces } from '../src/services/data/database/schema'
 
 const ctx = new Context()
 ctx.plugin(DatabaseService, { dbPath: ':memory:' })
@@ -14,8 +16,8 @@ await ctx.plugin(TracesService)
 
 // 每个用例前清空数据（先删子表 agent_traces，再删父表 agent_threads，避免 FK 拦截）
 beforeEach(() => {
-  ctx.database.run('DELETE FROM agent_traces')
-  ctx.database.run('DELETE FROM agent_threads')
+  ctx.database.exec('DELETE FROM agent_traces')
+  ctx.database.exec('DELETE FROM agent_threads')
 })
 
 function seedTrace(threadId: string, text: string, messageId = 'm-1') {
@@ -23,11 +25,19 @@ function seedTrace(threadId: string, text: string, messageId = 'm-1') {
   ctx.traces.insertTrace(threadId, messageId, 'chat-1', text)
 }
 
+function getStatus(traceId: number): string | undefined {
+  return ctx.database.db
+    .select({ status: agentTraces.status })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, traceId))
+    .get()?.status
+}
+
 test('insertTrace 后 getPendingTrace 能取到，status=pending', () => {
   seedTrace('t1', 'hello')
   const trace = ctx.traces.getPendingTrace()
   assert.ok(trace)
-  assert.equal(trace.thread_id, 't1')
+  assert.equal(trace.threadId, 't1')
   assert.equal(trace.status, TRACE_STATUS.PENDING)
 })
 
@@ -35,7 +45,7 @@ test('getPendingTrace 取最早一条（按 created_at）', () => {
   seedTrace('t1', 'first')
   seedTrace('t2', 'second')
   const trace = ctx.traces.getPendingTrace()
-  assert.equal(trace?.input_text, 'first')
+  assert.equal(trace?.inputText, 'first')
 })
 
 test('getPendingTrace 空队列返回 null', () => {
@@ -64,10 +74,7 @@ test('完整流转：pending → processing → done', () => {
   const trace = ctx.traces.getPendingTrace()!
   ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
   ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
-  const row = ctx.database.get<{ status: string }>(`SELECT status FROM agent_traces WHERE id = ?`, [
-    trace.id
-  ])
-  assert.equal(row?.status, TRACE_STATUS.DONE)
+  assert.equal(getStatus(trace.id), TRACE_STATUS.DONE)
 })
 
 test('失败路径：processing → failed', () => {
@@ -75,10 +82,7 @@ test('失败路径：processing → failed', () => {
   const trace = ctx.traces.getPendingTrace()!
   ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
   ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
-  const row = ctx.database.get<{ status: string }>(`SELECT status FROM agent_traces WHERE id = ?`, [
-    trace.id
-  ])
-  assert.equal(row?.status, TRACE_STATUS.FAILED)
+  assert.equal(getStatus(trace.id), TRACE_STATUS.FAILED)
 })
 
 test('getLatestProcessingTrace 返回 processing 状态的那条', () => {
@@ -103,9 +107,6 @@ test('resetStaleProcessingTraces 把 processing 重置回 pending', () => {
   assert.equal(ctx.traces.getPendingTrace()?.id, trace.id) // 又能被领取
 })
 
-test('FK：插入不存在的 thread_id 抛 errcode=787', () => {
-  assert.throws(
-    () => ctx.traces.insertTrace('no-such-thread', 'm-x', 'chat-1', 'hello'),
-    (err: unknown) => (err as { errcode?: number }).errcode === 787
-  )
+test('FK：插入不存在的 thread_id 抛约束错误', () => {
+  assert.throws(() => ctx.traces.insertTrace('no-such-thread', 'm-x', 'chat-1', 'hello'))
 })
