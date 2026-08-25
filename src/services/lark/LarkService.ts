@@ -73,7 +73,7 @@ export default class LarkService extends Service {
   }
 
   /** 统一处理回复失败：记日志不抛出（回复失败不应中断事件流/主流程） */
-  private useReplayCatch(threadId: string, callback: () => Promise<unknown>) {
+  private useReplyCatch(threadId: string, callback: () => Promise<unknown>) {
     return callback().catch((error: unknown) => {
       logger.error('[lark] 回复失败: ', { threadId, error: stringify(error) })
     })
@@ -89,13 +89,13 @@ export default class LarkService extends Service {
       const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
       if (!trace) return
 
-      this.useReplayCatch(threadId, () => this.replyToMessage(trace.messageId, content))
+      this.useReplyCatch(threadId, () => this.replyToMessage(trace.messageId, content))
     })
 
     this.ctx.on('agent/error', (threadId, error) => {
       const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
       if (!trace) return
-      this.useReplayCatch(threadId, () =>
+      this.useReplyCatch(threadId, () =>
         this.replyToMessage(trace.messageId, `Agent 处理失败：${error}`)
       )
     })
@@ -154,7 +154,7 @@ export default class LarkService extends Service {
 
     this.ctx.emit('message/received', threadId, content)
 
-    this.useReplayCatch(threadId, () => this.replyToMessage(messageId, '🤔 正在思考中…'))
+    this.useReplyCatch(threadId, () => this.replyToMessage(messageId, '🤔 正在思考中…'))
   }
 
   private async getUserName(openId: string): Promise<string> {
