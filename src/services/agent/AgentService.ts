@@ -25,7 +25,6 @@ export default class AgentService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'agent')
 
-    // 缺 LLM 配置 → 插件 FAILED（原 config/agent import 时 throw，拆副作用后挪到构造器）
     if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_BASE_URL) {
       throw new Error('缺少 LLM 配置：请在 .env 设置 OPENAI_API_KEY / OPENAI_BASE_URL')
     }

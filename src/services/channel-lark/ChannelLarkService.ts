@@ -1,5 +1,4 @@
 import { Service, type Context } from 'cordis'
-import type DatabaseService from '@/services/database/DatabaseService'
 
 export type ChannelLarkRecord = {
   event_type: string

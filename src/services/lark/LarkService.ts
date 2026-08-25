@@ -8,7 +8,6 @@ import { type LarkMessage, parseMessageContent } from './message'
 /**
  * lark adapter Service：入站（WS 长连接收消息、落库入队）+ 出站（replyToMessage 等能力）。
  * 回复路径保持事件解耦：只订阅 agent/result、agent/error，反查 processing trace 拿 message_id 回消息，
- * 完全不知道 agent 内部如何执行。
  */
 export default class LarkService extends Service {
   static inject = ['channelLark', 'threads', 'traces']
@@ -19,7 +18,6 @@ export default class LarkService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'lark')
 
-    // 缺飞书配置 → 插件 FAILED（原 config/lark import 时 throw，拆副作用后挪到构造器）
     if (!process.env.LARK_APP_ID || !process.env.LARK_APP_SECRET) {
       throw new Error('缺少飞书配置：请检查 LARK_APP_ID LARK_APP_SECRET')
     }
@@ -40,15 +38,13 @@ export default class LarkService extends Service {
     this.ws.close()
   }
 
-  /** 回复指定消息（文本） */
-  async replyToMessage(messageId: string, text: string) {
+  private async replyToMessage(messageId: string, text: string) {
     return this.client.im.message.reply({
       path: { message_id: messageId },
       data: { content: JSON.stringify({ text }), msg_type: 'text' }
     })
   }
 
-  /** 订阅 agent 事件：结果/错误回消息（agent 完全不知道 lark 存在） */
   private watchAgentLoop() {
     this.ctx.on('agent/result', (threadId, _node, msg) => {
       if (typeof msg.content !== 'string' || !msg.content) {
@@ -119,13 +115,12 @@ export default class LarkService extends Service {
       content
     })
 
-    // 写入 agent 队列（pending），由 workerService 轮询消费；最终回复由 agent/result 事件触发
+    // 写入 agent 队列（pending）
     this.ctx.threads.ensureThread(threadId, msg.message.chat_type, chatId, openId ?? null)
     this.ctx.traces.insertTrace(threadId, messageId, chatId, content)
 
     this.ctx.emit('message/received', threadId, content)
 
-    // 先回个"正在思考"，长任务期间用户有反馈
     await this.replyToMessage(messageId, '🤔 正在思考中…')
   }
 

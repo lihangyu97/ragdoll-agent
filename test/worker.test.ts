@@ -10,10 +10,11 @@ import ThreadsService from '../src/services/threads/ThreadsService'
 import TracesService, { TRACE_STATUS, type TraceStatus } from '../src/services/traces/TracesService'
 import WorkerService from '../src/services/worker/WorkerService'
 
-/** mock agent：记录调用，正常时 emit agent/* 事件，可配置失败 */
+/** mock agent：记录调用，正常时 emit agent/* 事件，可配置失败 / 可配置挂起等待放行 */
 class MockAgentService extends Service {
   static calls: { input: string; threadId: string }[] = []
   static failNext = false
+  static gate: Promise<void> | null = null
 
   constructor(ctx: Context) {
     super(ctx, 'agent')
@@ -24,6 +25,7 @@ class MockAgentService extends Service {
       MockAgentService.failNext = false
       throw new Error('mock agent fail')
     }
+    if (MockAgentService.gate) await MockAgentService.gate
     MockAgentService.calls.push({ input, threadId })
     this.ctx.emit('agent/input', threadId, input)
     this.ctx.emit('agent/result', threadId, 'mock-node', new AIMessage('mock reply'))
@@ -40,6 +42,7 @@ await ctx.plugin(WorkerService)
 beforeEach(() => {
   MockAgentService.calls = []
   MockAgentService.failNext = false
+  MockAgentService.gate = null
   ctx.database.run('DELETE FROM agent_traces')
   ctx.database.run('DELETE FROM agent_threads')
   ctx.worker.stop()
@@ -103,4 +106,39 @@ test('队列空时不消费（无 pending 记录，start/stop 正常）', async 
   await new Promise(resolve => setTimeout(resolve, 50))
   ctx.worker.stop()
   assert.equal(MockAgentService.calls.length, 0)
+})
+
+test('防重入：上一轮未完成时再次 start 不重复消费', async t => {
+  // 测试结束前停掉 interval，否则挂起的 timer 让 node --test 永不退出
+  t.after(() => ctx.worker.stop())
+
+  let release: () => void = () => {}
+  MockAgentService.gate = new Promise<void>(resolve => {
+    release = resolve
+  })
+  const traceId = seedTrace('t1', 'hello')
+
+  ctx.worker.start()
+  // 旧 poll 已抢锁（processing 状态）并挂在 gate 上
+  await waitUntil(() => {
+    const row = ctx.database.get<{ status: string }>(
+      `SELECT status FROM agent_traces WHERE id = ?`,
+      [traceId]
+    )
+    return row?.status === TRACE_STATUS.PROCESSING
+  })
+
+  ctx.worker.stop()
+  ctx.worker.start() // 新 poll 被 processing 标志挡住，不重复消费
+
+  release() // 放行旧 run
+  await waitUntil(() => {
+    const row = ctx.database.get<{ status: string }>(
+      `SELECT status FROM agent_traces WHERE id = ?`,
+      [traceId]
+    )
+    return row?.status === TRACE_STATUS.DONE
+  })
+
+  assert.equal(MockAgentService.calls.length, 1)
 })

@@ -15,7 +15,7 @@
 - **`traces` / `threads` / `turns` / `channelLark`**：原 `sqlite/agentTraces` 等 1:1 平移，注入 database；`TRACE_STATUS` / `THREAD_STATUS` 常量随 Service 导出
 - **`agent`**：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播五个 `agent/*` 类型化事件；`registerTools()` / `setSystemPrompt()` 作为 tools/prompt 注册点
 - **`lark`**：入站生产（落库 channel_lark → ensureThread → insertTrace → 回"正在思考"）+ 出站（replyToMessage）；订阅 `agent/result`/`agent/error` 反查 processing trace 回消息
-- **`worker`**：轮询 `agent_traces`（3s），抢锁 → `ctx.agent.run` → done/failed；启动时 `resetStaleProcessingTraces` 兜底残留
+- **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → `ctx.agent.run` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底（`resetStaleProcessingTraces`）暂不做
 
 **Plugins**（`src/plugins/*`）：`channel`（lark 生命周期）、`worker`（worker 生命周期）、`agent-demo`（注入 toy tools/prompt）、`turn-recorder`（订阅 agent/* 写 agent_turns，以 agent/input 为轮次边界）、`console-demo`（订阅 agent/* 打印，原 toy/loggerHooks）
 

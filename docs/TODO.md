@@ -32,7 +32,7 @@
 - [x] `sqlite/logger.ts` 例外：不走 safe，写失败 console 兜底 —— 日志写入失败不能反过来中断业务
 - [x] 飞书回传：`lark.handleReceiveV1Message` 包 catch，sql 报错即中断并记录；agent 错误回传 `⚠️ Agent 处理失败：...`（agent/error 事件订阅）
 - [x] LLM 超时：单次请求 60s + `maxRetries: 2`（`ChatOpenAI`）；`run()` 整体 5 分钟 AbortController 超时（`signal` 传入 `agent.stream`，超时 → AbortError → trace failed + 飞书回传）
-- [x] worker 兜底：`poll()` 循环 try/catch（sql 报错不崩循环）+ 启动时 `resetStaleProcessingTraces()` 重置孤儿 processing 记录
+- [x] worker 兜底：`poll()` 循环 try/catch（sql 报错不崩循环）；启动时 `resetStaleProcessingTraces()` 重置孤儿 processing 记录（2025-08-25 简化 worker 时移除，崩溃/重启兜底暂不做）
 - [x] 全局兜底：~~application/index.ts~~ **已补回**（2025-08-25）：`src/index.ts` 根上 `unhandledRejection`（exitCode=1 自然退出）/ `uncaughtException`（exit(1) 立即退出），兜住 checkpointer 等第三方实例的漏网异常（`SqliteSaver` 自己持有独立 DatabaseSync，不走 `getDb()`，database Service 管不到）
 - [x] 验证：`test/database.test.ts`（错误 SQL rethrow + logger 记录）、`test/traces.test.ts`（FK 787）、`test/worker.test.ts`（轮询消费 + 失败路径）、`test/turn-recorder.test.ts` 已覆盖；正常收发消息真实链路验证过
 
