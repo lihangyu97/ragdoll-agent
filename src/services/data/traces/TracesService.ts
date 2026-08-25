@@ -1,11 +1,15 @@
 import { Service, type Context } from 'cordis'
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, lt, sql } from 'drizzle-orm'
 import { agentTraces, TRACE_STATUS, type TraceStatus } from '@/services/data/database/schema'
 
 export { TRACE_STATUS } from '@/services/data/database/schema'
 export type { TraceStatus } from '@/services/data/database/schema'
 
 export type AgentTraceRecord = typeof agentTraces.$inferSelect
+
+/** processing 超过该时长视为"无主"（进程崩溃残留）：worker 启动时回收重置回 pending。
+ *  必须大于单次 agent 执行上限（AGENT_RUN_TIMEOUT_MS = 5min），否则会把正在跑的 trace 误判为残留。 */
+export const STALE_PROCESSING_MINUTES = 10
 
 declare module 'cordis' {
   interface Context {
@@ -70,12 +74,23 @@ export default class TracesService extends Service {
     return result.changes > 0
   }
 
-  /** worker 启动时调用：把上次进程遗留的 processing 记录重置回 pending（进程崩溃/重启后无主），返回重置条数 */
+  /**
+   * worker 启动时调用：把超过 STALE_PROCESSING_MINUTES 仍处于 processing 的遗留记录重置回 pending
+   * （进程崩溃/重启后无主）。只回收超时的，避免误伤其他实例正在跑的 trace（多实例安全）。返回重置条数。
+   */
   resetStaleProcessingTraces(): number {
     const result = this.ctx.database.db
       .update(agentTraces)
       .set({ status: TRACE_STATUS.PENDING, updatedAt: sql`datetime('now', 'localtime')` })
-      .where(eq(agentTraces.status, TRACE_STATUS.PROCESSING))
+      .where(
+        and(
+          eq(agentTraces.status, TRACE_STATUS.PROCESSING),
+          lt(
+            agentTraces.updatedAt,
+            sql`datetime('now', 'localtime', ${`-${STALE_PROCESSING_MINUTES} minutes`})`
+          )
+        )
+      )
       .run()
     return result.changes
   }

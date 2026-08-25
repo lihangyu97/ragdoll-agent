@@ -7,14 +7,14 @@
 
 ## 0. 当前进展
 
-`pnpm typecheck` + `pnpm test`（28 用例）全绿；`pnpm dev` 冒烟 + 真实 LLM 链路验证通过（插入 pending trace → worker 消费 done → 工具调用链 → agent/result 触发 lark 回复 + turn-recorder 写入轮次记录）。
+`pnpm typecheck` + `pnpm test`（23 用例）全绿；`pnpm dev` 冒烟 + 真实 LLM 链路验证通过（插入 pending trace → worker 消费 done → 工具调用链 → worker 完成路径直调 lark 出站回复 + turn-recorder 写入轮次记录）。
 
 **Services**（各带 `static inject` 声明依赖；实现见 `src/services/*`，数据层在 `src/services/data/`）：
 
 - **数据层**（`src/services/data/`）：**`database`**（better-sqlite3 连接 getDb + 暴露 drizzle 实例，构造时 `migrate` 应用 schema 迁移）、**`traces` / `threads` / `turns` / `channelLark`**（薄 repository，内部查询用 drizzle（同步 builder：`.all()/.get()/.run()`），注入 database；`TRACE_STATUS` / `THREAD_STATUS` 常量与表定义统一在 `database/schema.ts`）
 - **`agent`**：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播五个 `agent/*` 类型化事件；`registerTools()` / `setSystemPrompt()` 作为 tools/prompt 注册点
-- **`lark`**：入站生产（落库 channel_lark → ensureThread → insertTrace → 回"正在思考"）+ 出站（replyToMessage）；订阅 `agent/result`/`agent/error` 反查 processing trace 回消息
-- **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → `ctx.agent.run` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底（`resetStaleProcessingTraces`）暂不做
+- **`lark`**：入站生产（落库 channel_lark → ensureThread → insertTrace → 回"正在思考"）+ 出站 `reply()`（REST）；不订阅 `agent/*`（回复由 worker 完成路径直调）
+- **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → `ctx.agent.run` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底已做：**启动时回收超时（>10min，`STALE_PROCESSING_MINUTES`）的无主 processing trace** 重置回 pending（只回收超时的，不误伤其他实例正在跑的，多实例安全）；完成路径直调 `ctx.lark.reply()` 出站回复
 
 **Plugins**（`src/plugins/*`）：`channel`（lark 生命周期）、`worker`（worker 生命周期）、`agent-demo`（注入 toy tools/prompt）、`turn-recorder`（订阅 agent/* 写 agent_turns，以 agent/input 为轮次边界）、`console-demo`（订阅 agent/* 打印，原 toy/loggerHooks）
 
@@ -61,8 +61,8 @@
 | `agent/checkpointer`                                 | agent Service 内部依赖                                    | ✅         | 内联 SqliteSaver                                                                                            |
 | `agent/hooks`（HookBus）                             | **删除 → cordis 事件系统**                                | ✅         | 文件已删                                                                                                    |
 | `agent/turn`（AgentTurn）                            | **`turn-recorder` Plugin**                                | ✅         | 订阅 agent/* 写库                                                                                           |
-| `worker`                                             | **`worker` Service + Plugin**                             | ✅         | 轮询循环由插件 effect 包 start/stop；注入 `traces` + `agent`                                                |
-| `channels/lark`                                      | **`lark` Service**                                        | ✅         | 入站（WS 收消息）+ 出站（replyToMessage 等）                                                                |
+| `worker`                                             | **`worker` Service + Plugin**                             | ✅         | 轮询循环由插件 effect 包 start/stop；注入 `agent` + `traces` + `lark`（完成路径直调出站回复）               |
+| `channels/lark`                                      | **`lark` Service**                                        | ✅         | 入站（WS 收消息）+ 出站（`reply()` REST；回复由 worker 直调，不再订阅 agent/*）                             |
 | `channels/lark/message`                              | lark Service 内部纯函数工具                               | ✅         | `src/services/lark/message.ts`                                                                              |
 | `toy/tools`、`systemPrompt`                          | **`agent-demo` Plugin**                                   | ✅         | 注册工具/提示词                                                                                             |
 | `toy/loggerHooks`                                    | **`console-demo` Plugin**                                 | ✅         | 订阅 agent/* 打印                                                                                           |
@@ -79,13 +79,13 @@
 
 ### agent 层（五个事件，全部 `emit` 广播）
 
-| 事件                | 载荷                          | 订阅方                                |
-| ------------------- | ----------------------------- | ------------------------------------- |
-| `agent/input`       | (threadId, input)             | turn-recorder、console demo           |
-| `agent/tool-call`   | (threadId, node, AIMessage)   | turn-recorder、console demo           |
-| `agent/tool-result` | (threadId, node, ToolMessage) | turn-recorder、console demo           |
-| `agent/result`      | (threadId, node, BaseMessage) | lark adapter（回消息）、turn-recorder |
-| `agent/error`       | (threadId, error)             | lark adapter（回错误）                |
+| 事件                | 载荷                          | 订阅方                                                                        |
+| ------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
+| `agent/input`       | (threadId, input)             | turn-recorder、console demo                                                   |
+| `agent/tool-call`   | (threadId, node, AIMessage)   | turn-recorder、console demo                                                   |
+| `agent/tool-result` | (threadId, node, ToolMessage) | turn-recorder、console demo                                                   |
+| `agent/result`      | (threadId, node, BaseMessage) | turn-recorder、console demo（回复由 worker 完成路径直调 lark 出站，不走事件） |
+| `agent/error`       | (threadId, error)             | lark adapter（回错误）                                                        |
 
 agent 服务直接发五种静态类型化事件，node 作为载荷字段（不再动态归类）。
 
@@ -96,10 +96,11 @@ agent 服务直接发五种静态类型化事件，node 作为载荷字段（不
 | `message/received` | `emit` | lark 收到消息、解析完、落库入队后广播；将来加 web/console 渠道时同一事件 |
 | `trace/status`     | `emit` | worker 状态流转 pending→processing→done/failed，观察/审计用              |
 
-### 回复路径（保持事件解耦）
+### 回复路径（worker 完成路径直调 lark 出站）
 
-- worker 只发 `agent/result` / `agent/error`，完全不知道 lark 存在
-- lark 作为订阅方，反查 processing trace 拿 message_id → `ctx.lark.replyToMessage`
+- worker 消费完 trace（done/failed）后，用自己抢到的那条 trace 的 `messageId` **直调 `ctx.lark.reply()`（出站 REST，不需要 WS）**，失败只记日志不中断主流程
+- 为多实例/多进程铺路：回复不依赖同进程事件，worker 实例自己就能回消息（出站是 REST，任何配置了 lark client 的进程都能调）；只有入站（WS 收消息）需要单实例
+- `agent/result` / `agent/error` 事件仍照发（turn-recorder / console-demo 用），lark **不再订阅**它们
 - 通用 `responder`（把 channel/message_id 写进 trace，多渠道可回复）**暂不做**，多渠道出现时再考虑
 
 ---
@@ -117,8 +118,8 @@ agent 服务直接发五种静态类型化事件，node 作为载荷字段（不
 database（构造时建表）
 traces / threads / turns / channelLark → inject [database]
 agent ←（自持 model/checkpointer；插件注入 tools/prompt）
-lark:           inject [channelLark, threads, traces]（订阅 agent/* 回消息）
-worker:         inject [agent, traces]（轮询队列 + 状态流转 + trace/status）
+lark:           inject [channelLark, threads, traces]（入站 WS + 出站 reply()；不订阅 agent/*）
+worker:         inject [agent, traces, lark]（轮询队列 + 状态流转 + 完成路径直调 lark 出站回复）
 turn-recorder:  inject [turns]（订阅 agent/* 写库）
 agent-demo:     inject [agent]（注册工具/提示词）
 logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite 的 insertLog/getDb）
@@ -136,7 +137,7 @@ logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite �
 - [x] **P2 补 worker / turn-recorder 单测**：`test/worker.test.ts`（mock agent Service + 轮询消费 + trace/status 事件，含失败路径）、`test/turn-recorder.test.ts`（事件驱动写库、轮次递增、跨 thread 忽略）
 - [x] **P3 config 改 cordis Config**：各 Service 定义 `static Config`（zod schema，如 `apiKey`/`baseUrl`/`appId`/`dbPath`/`domain`），根入口 `src/index.ts` 统一从 env 读入并 `ctx.plugin(Service, config)` 传入 → 缺配置插件 FAILED（ValidationError 列出问题字段）；配套在根上注册 `ctx.logger` console exporter（cordis 4 rc 内置 logger 默认只缓冲不输出，否则插件错误不可见）；`src/config/` 目录已删，配置内联进各 Service 或经 Config 传入
 - [ ] **P4 事件订阅方 / 第二渠道**：`trace/status`、`message/received` 目前无订阅方（观察/审计预留）；加 web/console 渠道验证事件协议
-- [ ] **P5 responder**：把 channel/message_id 写进 trace 的通用回复器（多渠道出现时再做）
+- [x] **P5（部分落地）**：回复已改为 worker 完成路径直调 `ctx.lark.reply()`（出站 REST），不再依赖事件订阅（为多实例铺路）；通用 `responder`（多渠道回复）+ 回复失败重试队列仍可后续做
 - [ ] **明确不做**：minato / `ctx.model`（保留原生 sqlite）、DB 队列保留、事件不持久化、数据库索引（数据量上来再说，见 TODO.md）
 
 ---

@@ -7,6 +7,7 @@ import {
 
 import logger from '@/utils/logger'
 import { threadContext } from '@/utils/context'
+import { stringify } from '@/utils'
 
 declare module 'cordis' {
   interface Context {
@@ -23,10 +24,11 @@ const POLL_INTERVAL_MS = 3_000
 
 /**
  * worker Service：周期轮询 agent_traces 队列，取 pending 记录调用 ctx.agent.run 处理。
- * 只负责消费 + 状态流转（并发 trace/status 事件）；回复由 lark 订阅 agent/* 事件完成，worker 完全不知道 lark 存在。
+ * 只负责消费 + 状态流转（并发 trace/status 事件）+ 完成后出站回复。
+ * 回复用 lark 出站 REST（不需要 WS），多实例下 worker 自己就能回消息，不依赖同进程事件。
  */
 export default class WorkerService extends Service {
-  static inject = ['agent', 'traces']
+  static inject = ['agent', 'traces', 'lark']
 
   private timer: ReturnType<typeof setInterval> | null = null
   private processing = false
@@ -37,6 +39,7 @@ export default class WorkerService extends Service {
 
   start() {
     if (this.timer) return
+    this.recoverStaleTraces()
     this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS)
     this.poll() // 启动立即消费一轮，避免积压队列等一个间隔
   }
@@ -45,6 +48,17 @@ export default class WorkerService extends Service {
     if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
+    }
+  }
+
+  /**
+   * 启动恢复：把进程崩溃/重启遗留的超时 processing trace 重置回 pending（只回收超过
+   * STALE_PROCESSING_MINUTES 的无主记录，不误伤其他实例正在跑的 trace），随后 poll 会重新领取。
+   */
+  private recoverStaleTraces() {
+    const recovered = this.ctx.traces.resetStaleProcessingTraces()
+    if (recovered > 0) {
+      logger.warn(`[worker] 启动恢复 ${recovered} 条遗留 processing trace`)
     }
   }
 
@@ -75,24 +89,31 @@ export default class WorkerService extends Service {
     }
   }
 
-  /** 跑一条 trace：agent.run + 状态流转（成功 done / 失败 failed）；logger 由 threadContext 自动关联 threadId */
+  /** 跑一条 trace：agent.run + 状态流转（成功 done / 失败 failed）+ 完成后直调 lark 出站回复；logger 由 threadContext 自动关联 threadId */
   private async handle(trace: AgentTraceRecord) {
     this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.PROCESSING)
 
     await threadContext.run(trace.threadId, async () => {
       logger.info('[worker] 开始处理')
       try {
-        await this.ctx.agent.run(trace.inputText, trace.threadId)
+        const answer = await this.ctx.agent.run(trace.inputText, trace.threadId)
 
         this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
         this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.DONE)
         logger.info('[worker] agent run done')
+        await this.replyIfNeeded(trace, answer)
       } catch (err) {
-        // agent.run 已 emit agent/error（lark 订阅回消息），这里只标记失败
         this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
         this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.FAILED)
         logger.error('[worker] agent run fail', err)
+        await this.replyIfNeeded(trace, `Agent 处理失败：${stringify(err)}`)
       }
     })
+  }
+
+  /** 只有 lark 渠道入站的 trace 带 messageId，才回复；reply 内部吞错，不影响主流程 */
+  private async replyIfNeeded(trace: AgentTraceRecord, text: string | null) {
+    if (!trace.messageId || !text) return
+    await this.ctx.lark.reply(trace.messageId, text)
   }
 }

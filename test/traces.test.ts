@@ -2,7 +2,7 @@ process.env.DB_PATH = ':memory:'
 
 import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { Context } from 'cordis'
 import DatabaseService from '../src/services/data/database/DatabaseService'
 import ThreadsService from '../src/services/data/threads/ThreadsService'
@@ -98,13 +98,28 @@ test('getLatestProcessingTrace 返回 processing 状态的那条', () => {
   assert.ok([first.id, second.id].includes(latest.id))
 })
 
-test('resetStaleProcessingTraces 把 processing 重置回 pending', () => {
+test('resetStaleProcessingTraces：超时（>10min）的 processing 重置回 pending', () => {
+  seedTrace('t1', 'hello')
+  const trace = ctx.traces.getPendingTrace()!
+  ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
+  // 把 updated_at 改到 20 分钟前，模拟进程崩溃后遗留的无主 processing
+  ctx.database.db
+    .update(agentTraces)
+    .set({ updatedAt: sql`datetime('now', 'localtime', '-20 minutes')` })
+    .where(eq(agentTraces.id, trace.id))
+    .run()
+  const reset = ctx.traces.resetStaleProcessingTraces()
+  assert.equal(reset, 1)
+  assert.equal(ctx.traces.getPendingTrace()?.id, trace.id) // 又能被领取
+})
+
+test('resetStaleProcessingTraces：新鲜的 processing 不重置（多实例安全，不误伤正在跑的）', () => {
   seedTrace('t1', 'hello')
   const trace = ctx.traces.getPendingTrace()!
   ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
   const reset = ctx.traces.resetStaleProcessingTraces()
-  assert.equal(reset, 1)
-  assert.equal(ctx.traces.getPendingTrace()?.id, trace.id) // 又能被领取
+  assert.equal(reset, 0)
+  assert.equal(ctx.traces.getLatestProcessingTrace('t1')?.id, trace.id) // 仍是 processing
 })
 
 test('FK：插入不存在的 thread_id 抛约束错误', () => {

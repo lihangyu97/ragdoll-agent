@@ -12,7 +12,7 @@ import TracesService, {
   type TraceStatus
 } from '../src/services/data/traces/TracesService'
 import { agentTraces } from '../src/services/data/database/schema'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import WorkerService from '../src/services/worker/WorkerService'
 
 /** mock agent：记录调用，正常时 emit agent/* 事件，可配置失败 / 可配置挂起等待放行 */
@@ -25,7 +25,7 @@ class MockAgentService extends Service {
     super(ctx, 'agent')
   }
 
-  async run(input: string, threadId: string) {
+  async run(input: string, threadId: string): Promise<string | null> {
     if (MockAgentService.failNext) {
       MockAgentService.failNext = false
       throw new Error('mock agent fail')
@@ -34,6 +34,20 @@ class MockAgentService extends Service {
     MockAgentService.calls.push({ input, threadId })
     this.ctx.emit('agent/input', threadId, input)
     this.ctx.emit('agent/result', threadId, 'mock-node', new AIMessage('mock reply'))
+    return 'mock reply'
+  }
+}
+
+/** mock lark：记录出站回复调用（worker 完成路径直调） */
+class MockLarkService extends Service {
+  static replies: { messageId: string; text: string }[] = []
+
+  constructor(ctx: Context) {
+    super(ctx, 'lark')
+  }
+
+  async reply(messageId: string, text: string) {
+    MockLarkService.replies.push({ messageId, text })
   }
 }
 
@@ -42,12 +56,14 @@ ctx.plugin(DatabaseService, { dbPath: ':memory:' })
 ctx.plugin(ThreadsService)
 ctx.plugin(TracesService)
 ctx.plugin(MockAgentService)
+ctx.plugin(MockLarkService)
 await ctx.plugin(WorkerService)
 
 beforeEach(() => {
   MockAgentService.calls = []
   MockAgentService.failNext = false
   MockAgentService.gate = null
+  MockLarkService.replies = []
   ctx.database.exec('DELETE FROM agent_traces')
   ctx.database.exec('DELETE FROM agent_threads')
   ctx.worker.stop()
@@ -86,6 +102,8 @@ test('worker 消费 pending trace → done，且广播 trace/status', async () =
   assert.equal(MockAgentService.calls[0]?.input, 'hello')
   assert.equal(MockAgentService.calls[0]?.threadId, 't1')
   assert.deepEqual(statuses, [TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE])
+  // 完成路径直调 lark 出站回复（A2：回复由 worker 发起，不再依赖事件订阅）
+  assert.deepEqual(MockLarkService.replies, [{ messageId: 'm-1', text: 'mock reply' }])
 })
 
 test('worker run 失败 → trace failed，且广播 trace/status', async () => {
@@ -106,6 +124,10 @@ test('worker run 失败 → trace failed，且广播 trace/status', async () => 
   })
 
   assert.deepEqual(statuses, [TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED])
+  // 失败也直调出站回复错误信息
+  assert.equal(MockLarkService.replies.length, 1)
+  assert.equal(MockLarkService.replies[0]?.messageId, 'm-1')
+  assert.ok(MockLarkService.replies[0]!.text.startsWith('Agent 处理失败：mock agent fail'))
 })
 
 test('队列空时不消费（无 pending 记录，start/stop 正常）', async () => {
@@ -150,4 +172,50 @@ test('防重入：上一轮未完成时再次 start 不重复消费', async t =>
   })
 
   assert.equal(MockAgentService.calls.length, 1)
+})
+
+test('启动恢复：进程崩溃遗留的超时 processing trace 被重置并重新消费', async t => {
+  // 测试结束前停掉 interval，否则挂起的 timer 让 node --test 永不退出
+  t.after(() => ctx.worker.stop())
+
+  const traceId = seedTrace('t1', 'hello')
+  // 模拟崩溃残留：processing 状态 + updated_at 已是 20 分钟前（超过 STALE_PROCESSING_MINUTES）
+  ctx.traces.updateTraceStatus(traceId, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
+  ctx.database.db
+    .update(agentTraces)
+    .set({ updatedAt: sql`datetime('now', 'localtime', '-20 minutes')` })
+    .where(eq(agentTraces.id, traceId))
+    .run()
+
+  ctx.worker.start() // 启动时恢复 → 重新领取消费
+  await waitUntil(() => {
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
+    return row?.status === TRACE_STATUS.DONE
+  })
+
+  assert.equal(MockAgentService.calls.length, 1)
+  assert.deepEqual(MockLarkService.replies, [{ messageId: 'm-1', text: 'mock reply' }])
+})
+
+test('启动恢复：新鲜的 processing（其他实例正在跑）不被误伤', async t => {
+  // 测试结束前停掉 interval，否则挂起的 timer 让 node --test 永不退出
+  t.after(() => ctx.worker.stop())
+
+  const traceId = seedTrace('t1', 'hello')
+  ctx.traces.updateTraceStatus(traceId, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING) // 新鲜 processing
+
+  ctx.worker.start()
+  await new Promise(resolve => setTimeout(resolve, 100)) // 给 poll 一轮时间
+
+  assert.equal(MockAgentService.calls.length, 0) // 未被恢复、未被消费
+  const row = ctx.database.db
+    .select({ status: agentTraces.status })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, traceId))
+    .get()
+  assert.equal(row?.status, TRACE_STATUS.PROCESSING) // 仍是 processing
 })

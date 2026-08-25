@@ -52,9 +52,8 @@ export default class LarkService extends Service {
       })
     )
 
-    // 订阅注册一次（挂在 lark fiber 上，插件卸载自动撤销）；
-    // 不放 start()：channel 插件 effect 重启时会重复订阅导致重复回复
-    this.watchAgentLoop()
+    // 回复职责已移到 worker 完成路径直调（多进程下 worker 实例自己出站回复），
+    // lark 只保留：入站（WS 收消息落库）+ 出站 reply() 能力
   }
 
   async start() {
@@ -65,40 +64,21 @@ export default class LarkService extends Service {
     this.ws.close()
   }
 
-  private async replyToMessage(messageId: string, text: string) {
-    return this.client.im.message.reply({
-      path: { message_id: messageId },
-      data: { content: JSON.stringify({ text }), msg_type: 'text' }
-    })
-  }
-
-  /** 统一处理回复失败：记日志不抛出（回复失败不应中断事件流/主流程） */
-  private useReplyCatch(threadId: string, callback: () => Promise<unknown>) {
-    return callback().catch((error: unknown) => {
-      logger.error('[lark] 回复失败: ', { threadId, error: stringify(error) })
-    })
-  }
-
-  private watchAgentLoop() {
-    this.ctx.on('agent/result', (threadId, _node, msg) => {
-      const content = msg.content
-      if (typeof content !== 'string' || !content) {
-        logger.error('[lark] 消息格式异常: ', { threadId, msg })
-        return
-      }
-      const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
-      if (!trace) return
-
-      this.useReplyCatch(threadId, () => this.replyToMessage(trace.messageId, content))
-    })
-
-    this.ctx.on('agent/error', (threadId, error) => {
-      const trace = this.ctx.traces.getLatestProcessingTrace(threadId)
-      if (!trace) return
-      this.useReplyCatch(threadId, () =>
-        this.replyToMessage(trace.messageId, `Agent 处理失败：${error}`)
-      )
-    })
+  /**
+   * 出站回复（REST API，不需要 WS 连接）：任何配置了 lark client 的实例都可调用，
+   * 回复失败只记日志不抛出（回复失败不应中断 worker 主流程）。
+   */
+  async reply(messageId: string, text: string): Promise<boolean> {
+    try {
+      await this.client.im.message.reply({
+        path: { message_id: messageId },
+        data: { content: JSON.stringify({ text }), msg_type: 'text' }
+      })
+      return true
+    } catch (error) {
+      logger.error('[lark] 回复失败: ', { messageId, error: stringify(error) })
+      return false
+    }
   }
 
   private watchDispatcher() {
@@ -154,7 +134,8 @@ export default class LarkService extends Service {
 
     this.ctx.emit('message/received', threadId, content)
 
-    this.useReplyCatch(threadId, () => this.replyToMessage(messageId, '🤔 正在思考中…'))
+    // 回"正在思考"（入站路径直接出站回复；reply 内部吞错）
+    await this.reply(messageId, '🤔 正在思考中…')
   }
 
   private async getUserName(openId: string): Promise<string> {
