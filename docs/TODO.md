@@ -61,6 +61,16 @@
 - [ ] P1：knowledge（FTS5）/ guardrails（`agent/before-input`）/ 观测增强（token/耗时）——见设计文档 §5
 - [ ] 真实链路验证：飞书 → worker → agent（catalog 懒加载 → load_skill → 天气工具）→ 回复
 
+## 多 agent 路由 ✅（2025-08-26，P2 路由部分）
+
+**方案见 `docs/agent-capability-design.md` §3.6**（讨论结论：worker `process` 收口，绑定 → 规则 → LLM 识别 → default）。
+
+- [x] `agent_threads` 加 `agent_id` 列（drizzle 迁移 0001）；`threads.getAgentId/setAgentId`
+- [x] `AgentService`：`run(input, threadId, agentId='default')` + `Map<agentId, runtime>` 版本失效；`identify()` agentClient（无状态 router，withStructuredOutput 输出 `{agentId|null}`，清单来自 `capability.listDefinitions()`）
+- [x] `WorkerService.process` 收口：已绑定直接用 → `agent/resolve` bail 规则层 → `identify` LLM 兜底 → `hasDefinition` 校验 → 降级 default → 绑定标记
+- [x] `CapabilityService.listDefinitions()/hasDefinition()`
+- [x] 单测：worker 路由 5 用例（未绑定→default / 已绑定不识别 / 规则命中 / 识别命中 / 识别不存在降级）+ threads 绑定 + capability 辅助，全量 55 用例 + typecheck 全绿
+
 ## 其他
 
 - [ ] 超时报错：搞个通过的超时报错函数（waterfall 构建 systemprompt 已在 capability P0 落地）

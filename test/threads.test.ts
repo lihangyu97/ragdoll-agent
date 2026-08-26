@@ -40,3 +40,14 @@ test('ensureThread 幂等：重复调用不报错、不重复插入', () => {
     .get() ?? { c: 0 }
   assert.equal(c, 1)
 })
+
+test('getAgentId：新建 thread 默认 null；setAgentId 绑定后可读回', () => {
+  ctx.threads.ensureThread('t1', 'p2p', 'chat-1', 'ou-1')
+  assert.equal(ctx.threads.getAgentId('t1'), null)
+
+  ctx.threads.setAgentId('t1', 'kb-bot')
+  assert.equal(ctx.threads.getAgentId('t1'), 'kb-bot')
+
+  ctx.threads.setAgentId('t1', 'default') // 可覆盖（绑定动作幂等）
+  assert.equal(ctx.threads.getAgentId('t1'), 'default')
+})

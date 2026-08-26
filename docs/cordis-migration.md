@@ -15,7 +15,7 @@
 - **`agent`**：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播五个 `agent/*` 类型化事件；能力（tools/prompt/skills）经 `capability` 注册表注入（见 §5）
 - **`capability`**：能力注册表 + 组装器（prompt/tool/skill/definition + `assemble` → AgentSpec；agent 消费快照，version 失效重建）
 - **`lark`**：入站生产（落库 channel_lark → ensureThread → insertTrace → 回"正在思考"）+ 出站 `reply()`（REST）；不订阅 `agent/*`（回复由 worker 完成路径直调）
-- **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → `ctx.agent.run` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底已做：**启动时回收超时（>10min，`STALE_PROCESSING_MINUTES`）的无主 processing trace** 重置回 pending（只回收超时的，不误伤其他实例正在跑的，多实例安全）；完成路径直调 `ctx.lark.reply()` 出站回复
+- **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → **`process` 收口（路由归属：thread 已绑定直接用 → `agent/resolve` 规则 → `identify` LLM 识别兜底 → 降级 default → 标记 thread）** → `ctx.agent.run(input, threadId, agentId)` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底已做：**启动时回收超时（>10min，`STALE_PROCESSING_MINUTES`）的无主 processing trace** 重置回 pending（只回收超时的，不误伤其他实例正在跑的，多实例安全）；完成路径直调 `ctx.lark.reply()` 出站回复
 
 **Plugins**（`src/plugins/*`）：`channel`（lark 生命周期）、`worker`（worker 生命周期）、`agent-demo`（经 capability 注册 toy 工具/weather skill/默认定义）、`turn-recorder`（订阅 agent/* 写 agent_turns，以 agent/input 为轮次边界）、`console-demo`（订阅 agent/* 打印，原 toy/loggerHooks）
 
@@ -124,7 +124,7 @@ traces / threads / turns / channelLark → inject [database]
 agent ←（自持 model/checkpointer；能力快照来自 capability）
 capability:    注册表 + 组装（无依赖）
 lark:           inject [channelLark, threads, traces]（入站 WS + 出站 reply()；不订阅 agent/*）
-worker:         inject [agent, traces, lark]（轮询队列 + 状态流转 + 完成路径直调 lark 出站回复）
+worker:         inject [agent, capability, traces, threads, lark]（轮询队列 + process 路由归属（绑定→规则→LLM 识别→default）+ 状态流转 + 完成路径直调 lark 出站回复）
 turn-recorder:  inject [turns]（订阅 agent/* 写库）
 agent-demo:     inject [capability]（注册工具/skill/默认定义）
 logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite 的 insertLog/getDb）

@@ -1,6 +1,6 @@
 # Agent 能力模型与注入 Service 设计方案
 
-> 状态：**P0 已落地**（2025-08-26，评审通过；P0 实施完成，P1/P2 待做）。
+> 状态：**P0 + 多 agent 路由已落地**（2025-08-26；P0 完成，P2 路由部分完成，P1 与 P2 剩余待做）。
 > 评审结论：独立 `capability` Service；skills 默认 `catalog` 懒加载（`full` 作为可选项保留在 AgentDefinition 里）；P0 只做注册表+组装+skills；多 agent 推迟到 P2。
 > 背景：当前 agent 无 skills 能力；tools / systemPrompt 是 demo 时当玩具传入的（`src/toy/*` + `agent-demo` 插件启动装配）。
 > 目标：定义"一个 agent 由什么能力组成"，并设计一个 Service 把 skills / tools / systemPrompt / 知识等**注入** agent 运行时。
@@ -198,19 +198,34 @@ assemble(def) →
 - `ensureAgent()` 时 `version` 变了 → 重建（沿用现有"懒构建"模式，只是失效粒度从"改一个工具"变成"注册表版本"——更简单且无遗漏）。
 - 多 agent 时：`Map<defId, { version, runtime }>`。
 
-### 3.6 多 Agent 与路由（P2）
+### 3.6 多 Agent 与路由（✅ 已落地，2025-08-26）
 
-- `agent` 持有多个 runtime；`run(input, threadId, agentId = 'default')`。
-- thread → agent 绑定：`agent_threads` 表加 `agent_id` 列（或路由规则），worker 领 trace 时带上。事件 payload 增加 `agentId`（默认 agent 行为不变）。
+**分层**（讨论结论：lark 只负责收消息入队，路由收口在 worker 的 `process`）：
+
+```
+lark 收到消息 → ensureThread（agent_id=null）→ insertTrace → 入队
+worker poll 抢锁 → process(trace)：
+  1. thread 已绑定（agent_id 有值）→ 直接 run(input, threadId, agentId)
+  2. 未绑定 → 规则层：ctx.bail('agent/resolve', threadId, input)（确定性规则，插件可挂）
+  3. 规则未命中 → agentClient 识别：ctx.agent.identify(input)（LLM 兜底）
+  4. null / 失败 / hasDefinition 校验不过 → 降级 'default'
+  5. setAgentId 标记 thread（一次性定终身）→ run → 出站回复
+```
+
+- **`agent` 运行时**：`Map<agentId, {version, agent}>`，`run(input, threadId, agentId='default')`；注册表 version 变更全部失效重建；model/checkpointer 全局共享一份。
+- **agentClient（识别器）**：`AgentService.identify(input, chatType?)` —— 轻量无状态 router：无 checkpointer、无系统工具，`withStructuredOutput` 强制 `{agentId | null}`，prompt 里的助手清单来自 `capability.listDefinitions()`（注册新 definition 自动进分类视野）；失败/超时 → null。
+- **绑定**：`agent_threads.agent_id` 列（drizzle 迁移 0001），`threads.getAgentId/setAgentId`；**一次性定终身**（checkpointer 历史隔离，想换 agent = 新 thread / 显式 reset）。
+- **规则优先、LLM 兜底**：确定性约束（群绑定/命令/关键词）走 `agent/resolve` bail 事件，毫秒级且可测试；语义分类才花一次 LLM 调用，且只发生在未绑定 thread 的首条消息。
 
 ### 3.7 事件 / 策略点一览
 
-| 事件                  | 模式        | 用途                                      |
-| --------------------- | ----------- | ----------------------------------------- |
-| `agent/prompt-build`  | `waterfall` | 组装期改写 systemPrompt（守卫、插件注入） |
-| `agent/before-input`  | `waterfall` | 输入改写/拦截（P1 guardrails）            |
-| `agent/skill-load`    | `emit`      | 技能懒加载观测                            |
-| `agent/*`（现有五个） | `emit`      | 不变；P2 起 payload 带 agentId            |
+| 事件                  | 模式        | 用途                                                 |
+| --------------------- | ----------- | ---------------------------------------------------- |
+| `agent/prompt-build`  | `waterfall` | 组装期改写 systemPrompt（守卫、插件注入）            |
+| `agent/resolve`       | `bail`      | 规则层路由（返回 agentId 即命中，未命中走 LLM 识别） |
+| `agent/before-input`  | `waterfall` | 输入改写/拦截（P1 guardrails）                       |
+| `agent/skill-load`    | `emit`      | 技能懒加载观测                                       |
+| `agent/*`（现有五个） | `emit`      | 不变（payload 未加 agentId，暂无消费方）             |
 
 ---
 
@@ -244,9 +259,9 @@ assemble(def) →
 - [ ] `agent/before-input` waterfall（输入改写/拦截）+ 工具白名单
 - [ ] 事件 payload 补 token 用量/耗时；model 配置挪进 AgentDefinition
 
-### P2：多 agent + 渠道 + 策略
+### P2：多 agent + 渠道 + 策略（路由部分 ✅，其余待做）
 
-- [ ] 多 AgentDefinition + `agent_id` 路由（threads 表加列）
+- [x] 多 AgentDefinition + `agent_id` 路由：worker `process` 收口（绑定 → `agent/resolve` 规则 → `identify` LLM 兜底 → default），threads 表加列，见 §3.6
 - [ ] `responder` 渠道抽象（worker 不再直调 lark）
 - [ ] per-agent 超时/预算/限流
 

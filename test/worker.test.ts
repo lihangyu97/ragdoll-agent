@@ -14,10 +14,13 @@ import TracesService, {
 import { agentTraces } from '../src/services/data/database/schema'
 import { eq, sql } from 'drizzle-orm'
 import WorkerService from '../src/services/worker/WorkerService'
+import CapabilityService from '../src/services/capability/CapabilityService'
 
-/** mock agent：记录调用，正常时 emit agent/* 事件，可配置失败 / 可配置挂起等待放行 */
+/** mock agent：记录调用（含 agentId），可配置 identify 结果 / 失败 / 挂起等待放行 */
 class MockAgentService extends Service {
-  static calls: { input: string; threadId: string }[] = []
+  static calls: { input: string; threadId: string; agentId: string }[] = []
+  static identifyResult: string | null = null
+  static identifyCalls = 0
   static failNext = false
   static gate: Promise<void> | null = null
 
@@ -25,16 +28,21 @@ class MockAgentService extends Service {
     super(ctx, 'agent')
   }
 
-  async run(input: string, threadId: string): Promise<string | null> {
+  async run(input: string, threadId: string, agentId = 'default'): Promise<string | null> {
     if (MockAgentService.failNext) {
       MockAgentService.failNext = false
       throw new Error('mock agent fail')
     }
     if (MockAgentService.gate) await MockAgentService.gate
-    MockAgentService.calls.push({ input, threadId })
+    MockAgentService.calls.push({ input, threadId, agentId })
     this.ctx.emit('agent/input', threadId, input)
     this.ctx.emit('agent/result', threadId, 'mock-node', new AIMessage('mock reply'))
     return 'mock reply'
+  }
+
+  async identify(_input: string): Promise<string | null> {
+    MockAgentService.identifyCalls++
+    return MockAgentService.identifyResult
   }
 }
 
@@ -55,12 +63,15 @@ const ctx = new Context()
 ctx.plugin(DatabaseService, { dbPath: ':memory:' })
 ctx.plugin(ThreadsService)
 ctx.plugin(TracesService)
+await ctx.plugin(CapabilityService)
 ctx.plugin(MockAgentService)
 ctx.plugin(MockLarkService)
 await ctx.plugin(WorkerService)
 
 beforeEach(() => {
   MockAgentService.calls = []
+  MockAgentService.identifyResult = null
+  MockAgentService.identifyCalls = 0
   MockAgentService.failNext = false
   MockAgentService.gate = null
   MockLarkService.replies = []
@@ -218,4 +229,105 @@ test('启动恢复：新鲜的 processing（其他实例正在跑）不被误伤
     .where(eq(agentTraces.id, traceId))
     .get()
   assert.equal(row?.status, TRACE_STATUS.PROCESSING) // 仍是 processing
+})
+
+test('未绑定 thread：识别 null → 绑定 default 后运行', async t => {
+  t.after(() => ctx.worker.stop())
+  const traceId = seedTrace('t1', 'hello')
+
+  ctx.worker.start()
+  await waitUntil(() => {
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
+    return row?.status === TRACE_STATUS.DONE
+  })
+
+  assert.equal(MockAgentService.calls.length, 1)
+  assert.equal(MockAgentService.calls[0]?.agentId, 'default')
+  assert.equal(ctx.threads.getAgentId('t1'), 'default') // 已标记
+})
+
+test('已绑定 thread：直接用绑定 agent，不再识别', async t => {
+  t.after(() => ctx.worker.stop())
+  ctx.threads.ensureThread('t2', 'p2p', 'chat-1', null)
+  ctx.threads.setAgentId('t2', 'kb-bot')
+  const traceId = ctx.traces.insertTrace('t2', 'm-1', 'chat-1', 'hi')
+  MockAgentService.identifyResult = 'kb-bot'
+
+  ctx.worker.start()
+  await waitUntil(() => {
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
+    return row?.status === TRACE_STATUS.DONE
+  })
+
+  assert.equal(MockAgentService.calls[0]?.agentId, 'kb-bot')
+  assert.equal(MockAgentService.identifyCalls, 0) // 走绑定，不走 LLM 识别
+})
+
+test('规则事件命中：agent/resolve 返回 id → 绑定并运行，不走识别', async t => {
+  t.after(() => ctx.worker.stop())
+  ctx.capability.registerDefinition({ id: 'kb-bot', basePrompt: 'You are kb assistant.' })
+  const off = ctx.on('agent/resolve', () => 'kb-bot')
+  t.after(() => off()) // 共享 ctx，用完即注销，避免污染后续用例
+  const traceId = seedTrace('t1', '查知识库')
+
+  ctx.worker.start()
+  await waitUntil(() => {
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
+    return row?.status === TRACE_STATUS.DONE
+  })
+
+  assert.equal(MockAgentService.calls[0]?.agentId, 'kb-bot')
+  assert.equal(ctx.threads.getAgentId('t1'), 'kb-bot')
+  assert.equal(MockAgentService.identifyCalls, 0)
+})
+
+test('识别返回存在的 agent → 绑定并运行', async t => {
+  t.after(() => ctx.worker.stop())
+  ctx.capability.registerDefinition({ id: 'kb-bot', basePrompt: 'You are kb assistant.' })
+  MockAgentService.identifyResult = 'kb-bot'
+  const traceId = seedTrace('t1', '帮我查知识库')
+
+  ctx.worker.start()
+  await waitUntil(() => {
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
+    return row?.status === TRACE_STATUS.DONE
+  })
+
+  assert.equal(MockAgentService.calls[0]?.agentId, 'kb-bot')
+  assert.equal(ctx.threads.getAgentId('t1'), 'kb-bot')
+})
+
+test('识别返回不存在的 agent → 降级 default', async t => {
+  t.after(() => ctx.worker.stop())
+  MockAgentService.identifyResult = 'ghost' // 未注册的 definition
+  const traceId = seedTrace('t1', 'hi')
+
+  ctx.worker.start()
+  await waitUntil(() => {
+    const row = ctx.database.db
+      .select({ status: agentTraces.status })
+      .from(agentTraces)
+      .where(eq(agentTraces.id, traceId))
+      .get()
+    return row?.status === TRACE_STATUS.DONE
+  })
+
+  assert.equal(MockAgentService.calls[0]?.agentId, 'default')
+  assert.equal(ctx.threads.getAgentId('t1'), 'default')
 })

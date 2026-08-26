@@ -216,6 +216,19 @@ test('registerDefinition 同 id 覆盖（内置 default 可替换）', async () 
   assert.ok(!spec.systemPrompt.includes('helpful assistant'))
 })
 
+test('listDefinitions / hasDefinition：路由识别辅助', async () => {
+  const ctx = await setup()
+  ctx.capability.registerDefinition({ id: 'kb-bot', basePrompt: 'You are kb assistant.' })
+
+  const ids = ctx.capability.listDefinitions().map(d => d.id)
+  assert.ok(ids.includes('default')) // 内置兜底定义
+  assert.ok(ids.includes('kb-bot'))
+
+  assert.equal(ctx.capability.hasDefinition('default'), true)
+  assert.equal(ctx.capability.hasDefinition('kb-bot'), true)
+  assert.equal(ctx.capability.hasDefinition('ghost'), false)
+})
+
 test('waterfall 改写点：插件可在组装期追加 systemPrompt', async () => {
   const ctx = await setup()
   ctx.on(

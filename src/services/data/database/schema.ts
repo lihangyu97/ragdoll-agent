@@ -70,6 +70,8 @@ export const agentThreads = sqliteTable('agent_threads', {
   chatType: text('chat_type').notNull(),
   chatId: text('chat_id').notNull(),
   senderOpenId: text('sender_open_id'),
+  /** 绑定的 agent definition id（null = 未识别，worker process 首次消费时路由并标记） */
+  agentId: text('agent_id'),
   status: text('status').notNull().default(THREAD_STATUS.ACTIVE),
   createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now', 'localtime'))`)

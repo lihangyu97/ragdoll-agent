@@ -160,6 +160,16 @@ export default class CapabilityService extends Service {
     return { systemPrompt, tools }
   }
 
+  /** 已注册的全部 AgentDefinition（路由识别 / 管理用） */
+  listDefinitions(): AgentDefinition[] {
+    return [...this.definitions.values()]
+  }
+
+  /** definition 是否存在（路由识别结果校验用，防止识别到不存在的 agent） */
+  hasDefinition(id: string): boolean {
+    return this.definitions.has(id)
+  }
+
   private getDefinition(id: string): AgentDefinition {
     const def = this.definitions.get(id)
     if (!def) throw new Error(`[capability] definition 不存在: ${id}`)
