@@ -85,16 +85,16 @@ interface InboundMessage {
 
 ### 3.2 agent/* 事件：框架无关载荷（`src/services/agent/steps.ts`）
 
-`AgentService` 对外只有 `run(input, threadId, agentId)` 与 `identify(input)` 两个签名（已中立）；langchain 消息在 run 内部转换成中立载荷再发事件，**全仓库只有 `src/services/agent/` 内部 + `src/toy/` 能 import `@langchain/*`**：
+`AgentService` 对外只有 `run(input, threadId, agentId)` 与 `identify(input)` 两个签名（已中立）；langchain 消息在 run 内部转换成中立载荷再发事件，**全仓库只有 `src/services/agent/` 内部 + `src/plugins/weather/`（demo 工具）能 import `@langchain/*`**：
 
-| 事件                | 载荷                                              | 订阅方                      |
-| ------------------- | ------------------------------------------------- | --------------------------- |
-| `agent/input`       | `(threadId, input)`                               | turn-recorder、console-demo |
-| `agent/tool-call`   | `(threadId, node, { toolCalls: ToolCallInfo[] })` | turn-recorder、console-demo |
-| `agent/tool-result` | `(threadId, node, { toolCallId, text })`          | turn-recorder、console-demo |
-| `agent/result`      | `(threadId, node, { text })`                      | turn-recorder、console-demo |
-| `agent/error`       | `(threadId, error)`                               | 预留（adapter 不订阅）      |
-| `agent/timeout`     | `(threadId)`                                      | 预留                        |
+| 事件                | 载荷                                              | 订阅方                |
+| ------------------- | ------------------------------------------------- | --------------------- |
+| `agent/input`       | `(threadId, input)`                               | turn-recorder、output |
+| `agent/tool-call`   | `(threadId, node, { toolCalls: ToolCallInfo[] })` | turn-recorder、output |
+| `agent/tool-result` | `(threadId, node, { toolCallId, text })`          | turn-recorder、output |
+| `agent/result`      | `(threadId, node, { text })`                      | turn-recorder、output |
+| `agent/error`       | `(threadId, error)`                               | output                |
+| `agent/timeout`     | `(threadId)`                                      | 预留                  |
 
 ### 3.3 数据表（`src/services/data/database/schema.ts`）
 

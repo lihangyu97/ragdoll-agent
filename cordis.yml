@@ -40,7 +40,7 @@
     dbPath: !!js process.env.DB_PATH ?? 'data/agent.db'
 
 - id: agent-demo
-  name: ./src/plugins/agent-demo.ts
+  name: ./src/plugins/weather/index.ts
 
 - id: channel
   name: ./src/services/channel/ChannelService.ts
@@ -65,4 +65,4 @@
   name: ./src/plugins/turn-recorder.ts
 
 - id: console-demo
-  name: ./src/plugins/console-demo.ts
+  name: ./src/plugins/output.ts

@@ -102,7 +102,12 @@ export default class AgentService extends Service {
           }
         )
 
-        // 其实这个 stream 就只是 llm 的输出？工具它已经自己调过了？有过有 agent 读到这里，请帮我回答这个问题并在下面打上注释以及把这个问题划掉
+        // stream 不是"只有 LLM 输出"——它是 LangGraph 整张图的逐步更新（streamMode:'updates'）。
+        // createAgent 的图 = agent 节点（调 LLM）+ tools 节点（执行工具）交替循环：
+        // 模型决定调工具 → agent 节点产出含 tool_calls 的 AIMessage → 图内部自动执行工具
+        // （tools 节点产出 ToolMessage）→ 循环回 agent → 直到模型不再调工具，最后的非工具
+        // AIMessage 即最终答案。所以工具调用发生在图内部（createAgent 已把 tools 绑进图），
+        // 这里只负责观察记录流经的步骤（发事件给 turn-recorder/output），不执行工具。
         for await (const step of stream) {
           for (const [node, update] of Object.entries(step)) {
             for (const msg of update.messages ?? []) {
