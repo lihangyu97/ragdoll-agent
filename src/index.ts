@@ -44,7 +44,10 @@ app.plugin(TracesService)
 app.plugin(ThreadsService)
 app.plugin(TurnsService)
 app.plugin(ChannelLarkService)
-app.plugin(CapabilityService)
+app.plugin(CapabilityService, {
+  root: process.env.SYSTEM_TOOLS_ROOT ?? 'data/workspace',
+  commands: (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean)
+})
 app.plugin(AgentService, {
   apiKey: process.env.OPENAI_API_KEY!,
   baseUrl: process.env.OPENAI_BASE_URL!,

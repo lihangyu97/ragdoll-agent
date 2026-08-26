@@ -1,6 +1,7 @@
 import { Service, type Context } from 'cordis'
 import { z } from 'zod'
 import { tool, type ClientTool } from '@langchain/core/tools'
+import { createSystemTools, type SystemToolsOptions } from './systemTools'
 
 declare module 'cordis' {
   interface Context {
@@ -58,16 +59,36 @@ const DEFAULT_DEFINITION: AgentDefinition = {
  * capability Service：agent 能力注册表 + 组装器（数据面）。
  * 注册 = 具名能力进注册表（version +1）；组装 = 按 AgentDefinition 产出 AgentSpec 快照。
  * 执行由 agent Service 消费快照懒构建 langchain agent，version 变更即失效重建。
+ * 系统工具（read_file/write_file/list_dir/glob/grep/edit_file/run_command）构造时 seed，
+ * 平台执行原语，assemble 自动并入每个 agent，与领域工具隔离（不可注册同名、不可注销）。
  */
 export default class CapabilityService extends Service {
+  static Config = z
+    .object({
+      /** 文件工具沙箱根目录（默认 data/workspace，相对 process.cwd() 解析） */
+      root: z.string().optional(),
+      /** run_command 工作目录（默认 process.cwd()） */
+      cwd: z.string().optional(),
+      /** run_command 命令白名单前缀（默认空 = 禁用 run_command） */
+      commands: z.array(z.string()).optional(),
+      /** run_command 超时（毫秒，默认 30s） */
+      timeoutMs: z.number().optional()
+    })
+    .default({})
+
   private readonly prompts = new Map<string, string>()
   private readonly tools = new Map<string, ClientTool>()
   private readonly skills = new Map<string, Skill>()
   private readonly definitions = new Map<string, AgentDefinition>()
+  private readonly systemTools = new Map<string, ClientTool>()
   private _version = 0
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, options: SystemToolsOptions = {}) {
     super(ctx, 'capability')
+    // 构造器参数形状与 Config 一致（cordis 已按 Config 校验后传入），未配置的项在 createSystemTools 里落默认值
+    for (const t of createSystemTools(options)) {
+      this.systemTools.set(t.name, t)
+    }
     this.definitions.set(DEFAULT_DEFINITION.id, DEFAULT_DEFINITION)
   }
 
@@ -89,12 +110,18 @@ export default class CapabilityService extends Service {
   }
 
   registerTool(tool: ClientTool) {
+    if (this.systemTools.has(tool.name)) {
+      throw new Error(`[capability] tool 与系统工具重名: ${tool.name}`)
+    }
     this.assertUnique(this.tools, tool.name, 'tool')
     this.tools.set(tool.name, tool)
     this._version++
   }
 
   unregisterTool(name: string) {
+    if (this.systemTools.has(name)) {
+      throw new Error(`[capability] 系统工具不可注销: ${name}`)
+    }
     this.assertExists(this.tools, name, 'tool')
     this.tools.delete(name)
     this._version++
@@ -197,6 +224,8 @@ export default class CapabilityService extends Service {
       }
     }
 
+    // 系统工具 = 平台执行原语，默认进所有 agent（安全收口交给 P1 guardrails）
+    for (const t of this.systemTools.values()) add(t)
     for (const name of def.tools ?? []) add(this.getTool(name))
     for (const skillName of def.skills ?? []) {
       for (const toolName of this.getSkill(skillName).tools ?? []) {

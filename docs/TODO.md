@@ -55,8 +55,9 @@
 - [x] `capability` Service：prompt/tool/skill/definition 注册表 + `version` 失效 + `assemble(def)` → AgentSpec
 - [x] AgentDefinition + 组装管线（basePrompt → persona → 技能目录/全文）+ `agent/prompt-build` waterfall 改写点
 - [x] `catalog` 模式 + `load_skill(name)` 懒加载工具（full 模式可选）
+- [x] **系统工具（平台执行原语）**：read_file/write_file/list_dir/glob/grep/edit_file/run_command 内置 seed，自动并入每个 agent（沙箱 root + 截断 + run_command 白名单/超时；`src/services/capability/systemTools.ts`）
 - [x] toy weather 迁移成 skill（`src/toy/weather-skill.ts`），`agent-demo` 改用新 API，`agent` Service 删旧 `registerTools/setSystemPrompt` 改版本失效重建
-- [x] 单测 `test/capability.test.ts`（12 用例）+ 全量 38 用例 + typecheck 全绿
+- [x] 单测 `test/capability.test.ts`（13 用例）+ `test/system-tools.test.ts`（10 用例）+ 全量 48 用例 + typecheck 全绿
 - [ ] P1：knowledge（FTS5）/ guardrails（`agent/before-input`）/ 观测增强（token/耗时）——见设计文档 §5
 - [ ] 真实链路验证：飞书 → worker → agent（catalog 懒加载 → load_skill → 天气工具）→ 回复
 

@@ -109,9 +109,10 @@ agent 服务直接发五种静态类型化事件，node 作为载荷字段（不
 ## 5. 能力注入（capability Service，2025-08-26 取代 tools/prompt 直注）
 
 - **`capability` Service**（`src/services/capability/CapabilityService.ts`）：能力注册表 + 组装器（数据面）。`registerPrompt / registerTool / registerSkill / registerDefinition`（+ unregister），注册即 version +1；`assemble(def)` 按 **AgentDefinition**（声明式规格）产出 AgentSpec 快照（systemPrompt + tools）。
+- **系统工具 = 平台执行原语**：read_file/write_file/list_dir/glob/grep/edit_file/run_command 由 `src/services/capability/systemTools.ts` 生成，构造时 seed，**自动并入每个 agent**（沙箱 root + 截断 + run_command 白名单/超时；演示级护栏，非真安全边界）。
 - **组装管线**：basePrompt → persona（具名 prompt 段）→ 技能目录/全文；skills 默认 **catalog 懒加载**（prompt 只放技能目录 + 内置 `load_skill(name)` 工具按需取全文，`full` 模式可全量注入）；组装期可经 `agent/prompt-build` waterfall 事件改写。
 - **`agent` Service**：消费快照懒构建 langchain agent；capability `version` 变更即失效、下次 run 重建（替代旧的 `registerTools()/setSystemPrompt()`）。`agent-demo` 插件改为注册 toy 工具 + weather skill + 默认定义。
-- 完整方案见 `docs/agent-capability-design.md`。
+- 完整方案见 `docs/agent-capability-design.md`（§2.3.1 系统工具、§3 注入机制）。
 
 ---
 

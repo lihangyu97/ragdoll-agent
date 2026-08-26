@@ -4,12 +4,37 @@ import { Context } from 'cordis'
 import { z } from 'zod'
 import { tool } from '@langchain/core/tools'
 import CapabilityService from '../src/services/capability/CapabilityService'
-import type { AgentDefinition, Skill } from '../src/services/capability/CapabilityService'
+import type {
+  AgentDefinition,
+  AgentSpec,
+  Skill
+} from '../src/services/capability/CapabilityService'
 
 async function setup() {
   const ctx = new Context()
   await ctx.plugin(CapabilityService)
   return ctx
+}
+
+const SYSTEM_TOOLS = [
+  'read_file',
+  'write_file',
+  'list_dir',
+  'glob',
+  'grep',
+  'edit_file',
+  'run_command'
+]
+
+/** 断言系统工具必在（平台原语默认进所有 agent），并过滤出领域工具名 */
+function domainTools(spec: AgentSpec): string[] {
+  for (const name of SYSTEM_TOOLS) {
+    assert.ok(
+      spec.tools.some(t => t.name === name),
+      `系统工具应默认进每个 agent: ${name}`
+    )
+  }
+  return spec.tools.map(t => t.name).filter(name => !SYSTEM_TOOLS.includes(name))
 }
 
 const fakeTool = (name: string) =>
@@ -33,11 +58,11 @@ const weatherDef: AgentDefinition = {
   skills: ['weather']
 }
 
-test('未注册任何能力：assemble 走内置默认定义（基础 prompt，无工具）', async () => {
+test('未注册任何能力：assemble 走内置默认定义（基础 prompt + 系统工具）', async () => {
   const ctx = await setup()
   const spec = await ctx.capability.assemble()
   assert.ok(spec.systemPrompt.includes('helpful assistant'))
-  assert.deepEqual(spec.tools, [])
+  assert.deepEqual(domainTools(spec), [])
 })
 
 test('catalog 模式：技能目录注入 + load_skill 工具', async () => {
@@ -51,10 +76,7 @@ test('catalog 模式：技能目录注入 + load_skill 工具', async () => {
   assert.ok(spec.systemPrompt.includes('You are a weather assistant.'))
   assert.ok(spec.systemPrompt.includes('- weather：查询天气（触发：天气、气温）'))
   assert.ok(spec.systemPrompt.includes('load_skill'))
-  assert.deepEqual(
-    spec.tools.map(t => t.name),
-    ['getLocation', 'getWeather', 'load_skill']
-  )
+  assert.deepEqual(domainTools(spec), ['getLocation', 'getWeather', 'load_skill'])
 })
 
 test('full 模式：instructions 全量注入，无 load_skill', async () => {
@@ -67,10 +89,7 @@ test('full 模式：instructions 全量注入，无 load_skill', async () => {
   const spec = await ctx.capability.assemble()
   assert.ok(spec.systemPrompt.includes(weather.instructions))
   assert.ok(!spec.systemPrompt.includes('可用技能'))
-  assert.deepEqual(
-    spec.tools.map(t => t.name),
-    ['getLocation', 'getWeather']
-  )
+  assert.deepEqual(domainTools(spec), ['getLocation', 'getWeather'])
 })
 
 test('load_skill 返回技能全文（含 resources）；未知技能返回可恢复提示', async () => {
@@ -128,17 +147,22 @@ test('def.tools 直挂 + skill.tools 引用去重，catalog 仍带 load_skill', 
   })
 
   const spec = await ctx.capability.assemble()
-  assert.deepEqual(
-    spec.tools.map(t => t.name),
-    ['t1', 'load_skill']
-  )
+  assert.deepEqual(domainTools(spec), ['t1', 'load_skill'])
 })
 
 test('直接传 AgentDefinition 组装（不经过注册表）', async () => {
   const ctx = await setup()
   const spec = await ctx.capability.assemble({ id: 'inline', basePrompt: 'inline base' })
   assert.ok(spec.systemPrompt.includes('inline base'))
-  assert.deepEqual(spec.tools, [])
+  assert.deepEqual(domainTools(spec), [])
+})
+
+test('系统工具隔离：注册同名抛错、不可注销、version 不受 seed 影响', async () => {
+  const ctx = await setup()
+  assert.throws(() => ctx.capability.registerTool(fakeTool('read_file')), /与系统工具重名/)
+  assert.throws(() => ctx.capability.unregisterTool('read_file'), /系统工具不可注销/)
+  // seed 发生在构造期，不占 version
+  assert.equal(ctx.capability.version, 0)
 })
 
 test('重复注册抛错；unregister 缺失抛错', async () => {

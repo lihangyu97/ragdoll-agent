@@ -65,9 +65,26 @@ systemPrompt 不是一段字符串，而是**可分层、可扩展的组装产�
 
 ### 2.3 Tools（可执行能力）（P0 增强）
 
-- 现有 `registerTools` 升级为具名注册：`registerTool(name, tool, meta?)` / `unregisterTool(name)`。
-- meta 可选：分组/命名空间、权限级别、是否危险、超时。命名唯一性注册时校验。
+- 具名注册：`registerTool(tool)`（以 `tool.name` 为键）/ `unregisterTool(name)`；命名唯一性注册时校验（含与系统工具重名）。
+- meta（分组/权限级别/是否危险/超时）P1 再加，P0 不引入空参数。
 - 工具发现：`load_skill` 之外，可提供 `list_tools` 类工具（P1，按需）。
+
+### 2.3.1 系统工具 = 平台执行原语（P0 已落地）
+
+**工具分两级，归属不同**（对齐 DSH harness：read/write/edit/glob/grep/bash 是平台内置，skills 只负责指令）：
+
+| 层级         | 内容                                                                                    | 归属                                                                         |
+| ------------ | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **系统工具** | `read_file` / `write_file` / `list_dir` / `glob` / `grep` / `edit_file` / `run_command` | CapabilityService 构造时 seed，`assemble` 自动并入**每个** agent，与领域无关 |
+| **领域工具** | 天气工具、knowledge_search 等                                                           | 插件按需 `registerTool` 注册，definition/skill 引用挂载                      |
+
+实现要点（`src/services/capability/systemTools.ts`）：
+
+- **沙箱**：文件工具 root 可配（默认 `data/workspace`），路径解析防 `../`/绝对路径逃逸；读取/搜索结果截断（4000 字符 + offset 续读 / 100 条上限）。
+- **run_command 受限**：cwd + 超时 + 命令白名单前缀（默认空 = 禁用）；拒绝链式/注入操作符（`&& || ; |` 反引号 `$()` `${}`）。**演示级护栏，不是真安全边界**。
+- **配置**：`CapabilityService.Config`（cordis zod schema）：`root / cwd / commands / timeoutMs`；`src/index.ts` 从 env 装配（`SYSTEM_TOOLS_ROOT`、`SYSTEM_TOOLS_COMMANDS`，见 `.env.example`）。
+- **隔离**：系统工具不可注册同名、不可注销，不占 version（seed 在构造期）；注册表 `version` 只管领域能力。
+- 安全收口（按 agent 白名单/权限分级）留给 P1 guardrails。
 
 ### 2.4 Knowledge 知识库 / RAG（P1）
 
@@ -217,8 +234,9 @@ assemble(def) →
 - [x] `capability` Service：prompt/tool/skill/definition 四个 register/unregister + `version` + `assemble(def)`
 - [x] AgentDefinition + 组装管线（basePrompt → persona → 技能目录/全文；组装期 `agent/prompt-build` waterfall 改写点）
 - [x] `catalog` 模式 + `load_skill(name)` 工具（懒加载，未知技能返回可恢复提示）
+- [x] **系统工具（平台执行原语）**：read_file/write_file/list_dir/glob/grep/edit_file/run_command 作为 CapabilityService 内置种子，assemble 自动并入每个 agent（沙箱 + 截断 + run_command 白名单/超时，见 §2.3.1）
 - [x] toy weather 迁移成 skill（`src/toy/weather-skill.ts`），`agent-demo` 改用新 API，`toy/systemPrompt.ts` 退役
-- [x] 验证：`pnpm typecheck` + 38 用例全绿（含 assemble 产物断言、catalog/full 两模式、load_skill 全文、重复注册/缺失引用抛错、version 递增、waterfall 改写点）；真实链路待跑
+- [x] 验证：`pnpm typecheck` + 48 用例全绿（含 assemble 产物断言、catalog/full 两模式、load_skill 全文、重复注册/缺失引用抛错、version 递增、waterfall 改写点、系统工具读写/搜索/编辑/命令全行为）；真实链路待跑
 
 ### P1：知识 + 守卫 + 观测
 
