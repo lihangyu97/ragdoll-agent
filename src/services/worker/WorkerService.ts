@@ -14,18 +14,15 @@ declare module 'cordis' {
     worker: WorkerService
   }
   interface Events {
-    /** worker 状态流转 pending→processing→done/failed，观察/审计用，避免别人轮询 DB */
+    // 后续观察状态可能有用...
     'trace/status': (threadId: string, status: TraceStatus) => void
   }
 }
 
-/** 轮询间隔（毫秒）：每个 tick 内把队列消费到空，运行中新消息最多延迟一个间隔 */
 const POLL_INTERVAL_MS = 3_000
 
 /**
  * worker Service：周期轮询 agent_traces 队列，取 pending 记录调用 ctx.agent.run 处理。
- * 只负责消费 + 状态流转（并发 trace/status 事件）+ 完成后出站回复。
- * 回复用 lark 出站 REST（不需要 WS），多实例下 worker 自己就能回消息，不依赖同进程事件。
  */
 export default class WorkerService extends Service {
   static inject = ['agent', 'traces', 'lark']
@@ -41,7 +38,7 @@ export default class WorkerService extends Service {
     if (this.timer) return
     this.recoverStaleTraces()
     this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS)
-    this.poll() // 启动立即消费一轮，避免积压队列等一个间隔
+    this.poll()
   }
 
   stop() {
@@ -62,7 +59,6 @@ export default class WorkerService extends Service {
     }
   }
 
-  /** 消费一轮：把 pending 全部处理完；上一轮未结束时跳过本次 tick（防重入） */
   private async poll() {
     if (this.processing) return
     this.processing = true
@@ -82,14 +78,12 @@ export default class WorkerService extends Service {
         await this.handle(trace)
       }
     } catch (err) {
-      // 兜底：轮询/抢锁的 sql 报错不能逃出（否则 unhandled rejection 崩 worker），记日志等下一个 tick
       logger.error('[worker] 轮询异常: ', err)
     } finally {
       this.processing = false
     }
   }
 
-  /** 跑一条 trace：agent.run + 状态流转（成功 done / 失败 failed）+ 完成后直调 lark 出站回复；logger 由 threadContext 自动关联 threadId */
   private async handle(trace: AgentTraceRecord) {
     this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.PROCESSING)
 
@@ -111,7 +105,6 @@ export default class WorkerService extends Service {
     })
   }
 
-  /** 只有 lark 渠道入站的 trace 带 messageId，才回复；reply 内部吞错，不影响主流程 */
   private async replyIfNeeded(trace: AgentTraceRecord, text: string | null) {
     if (!trace.messageId || !text) return
     await this.ctx.lark.reply(trace.messageId, text)

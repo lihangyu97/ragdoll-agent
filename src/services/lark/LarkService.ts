@@ -10,15 +10,11 @@ declare module 'cordis' {
     lark: LarkService
   }
   interface Events {
-    /** lark 收到消息、解析完、落库入队后广播；将来加 web/console 渠道时同一事件 */
+    // 后续可能有用...
     'message/received': (threadId: string, content: string) => void
   }
 }
 
-/**
- * lark adapter Service：入站（WS 长连接收消息、落库入队）+ 出站（replyToMessage 等能力）。
- * 回复路径保持事件解耦：只订阅 agent/result、agent/error，反查 processing trace 拿 message_id 回消息，
- */
 export default class LarkService extends Service {
   static inject = ['channelLark', 'threads', 'traces']
 
@@ -51,9 +47,6 @@ export default class LarkService extends Service {
         onReconnected: () => console.log('[lark] reconnected')
       })
     )
-
-    // 回复职责已移到 worker 完成路径直调（多进程下 worker 实例自己出站回复），
-    // lark 只保留：入站（WS 收消息落库）+ 出站 reply() 能力
   }
 
   async start() {
@@ -64,10 +57,6 @@ export default class LarkService extends Service {
     this.ws.close()
   }
 
-  /**
-   * 出站回复（REST API，不需要 WS 连接）：任何配置了 lark client 的实例都可调用，
-   * 回复失败只记日志不抛出（回复失败不应中断 worker 主流程）。
-   */
   async reply(messageId: string, text: string): Promise<boolean> {
     try {
       await this.client.im.message.reply({
@@ -128,13 +117,12 @@ export default class LarkService extends Service {
       content
     })
 
-    // 写入 agent 队列（pending）
+    // 写 thread
     this.ctx.threads.ensureThread(threadId, msg.message.chat_type, chatId, openId ?? null)
     this.ctx.traces.insertTrace(threadId, messageId, chatId, content)
 
     this.ctx.emit('message/received', threadId, content)
 
-    // 回"正在思考"（入站路径直接出站回复；reply 内部吞错）
     await this.reply(messageId, '🤔 正在思考中…')
   }
 

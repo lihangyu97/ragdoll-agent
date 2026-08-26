@@ -76,13 +76,9 @@ export default class AgentService extends Service {
     this.agent = undefined
   }
 
-  /**
-   * 执行一轮 agent，返回最终答案文本（最后一次 agent/result 消息的 content）。
-   * 返回 null：无文本答案（如纯工具链/空回复）。错误仍抛出（由调用方决定状态流转与回复）。
-   */
   async run(input: string, threadId: string): Promise<string | null> {
-    // logger 自动关联 threadId（agent 层自管上下文；worker 外层包裹与之嵌套，值相同无害）
     let answer: string | null = null
+
     await threadContext.run(threadId, async () => {
       const controller = new AbortController()
       const timer = setTimeout(() => {
