@@ -27,6 +27,7 @@ const POLL_INTERVAL_MS = 3_000
 /**
  * worker Service：周期轮询 agent_traces 队列，取 pending 记录交给 process 处理
  * （路由归属 → agent.run → 出站回复）。
+ * todo: 无主 trace 心跳租约回收
  */
 export default class WorkerService extends Service {
   static inject = ['agent', 'capability', 'traces', 'threads', 'channel']

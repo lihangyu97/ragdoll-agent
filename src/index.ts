@@ -12,10 +12,10 @@ import ChannelService from '@/services/channel/ChannelService'
 import LarkAdapter from '@/services/channel/adapters/lark/LarkAdapter'
 import WorkerService from '@/services/worker/WorkerService'
 import channelLark from '@/plugins/channel-lark'
-import agentDemo from '@/plugins/agent-demo'
+import weatherAssistant from '@/plugins/weather'
 import worker from '@/plugins/worker'
 import turnRecorder from '@/plugins/turn-recorder'
-import consoleDemo from '@/plugins/console-demo'
+import output from '@/plugins/output'
 
 const app = new Context()
 
@@ -55,7 +55,7 @@ app.plugin(AgentService, {
   model: process.env.OPENAI_MODEL ?? 'deepseek-v4-flash',
   dbPath: process.env.DB_PATH ?? 'data/agent.db'
 })
-app.plugin(agentDemo)
+app.plugin(weatherAssistant)
 app.plugin(ChannelService, { thinkingReply: '🤔 正在思考中…' })
 app.plugin(LarkAdapter, {
   appId: process.env.LARK_APP_ID!,
@@ -66,7 +66,7 @@ app.plugin(channelLark)
 app.plugin(WorkerService)
 app.plugin(worker)
 app.plugin(turnRecorder)
-app.plugin(consoleDemo)
+app.plugin(output)
 
 const close = async () => {
   const fibers = []

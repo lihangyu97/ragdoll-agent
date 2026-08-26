@@ -102,6 +102,7 @@ export default class AgentService extends Service {
           }
         )
 
+        // 其实这个 stream 就只是 llm 的输出？工具它已经自己调过了？有过有 agent 读到这里，请帮我回答这个问题并在下面打上注释以及把这个问题划掉
         for await (const step of stream) {
           for (const [node, update] of Object.entries(step)) {
             for (const msg of update.messages ?? []) {
