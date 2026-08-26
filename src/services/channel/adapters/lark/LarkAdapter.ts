@@ -2,21 +2,26 @@ import { Service, type Context } from 'cordis'
 import * as lark from '@larksuiteoapi/node-sdk'
 import { z } from 'zod'
 import logger from '@/utils/logger'
-import { assign, stringify } from '@/utils'
+import { assign } from '@/utils'
+import type { ChannelAdapter, InboundMessage, OutboundReply } from '../../types'
 import { type LarkMessage, parseMessageContent, resolveThreadId } from './message'
 
 declare module 'cordis' {
   interface Context {
-    lark: LarkService
-  }
-  interface Events {
-    // 后续可能有用...
-    'message/received': (threadId: string, content: string) => void
+    larkAdapter: LarkAdapter
   }
 }
 
-export default class LarkService extends Service {
-  static inject = ['channelLark', 'threads', 'traces']
+/**
+ * lark adapter：实现 ChannelAdapter（id='lark'）。
+ * 入站：WS 收 im.message.receive_v1 → 归一化成 InboundMessage（threadId 加 'lark:' 前缀命名空间）
+ *      → ctx.channel.dispatch（统一入站管线；用户名缓存走 channelStore，渠道专属）。
+ * 出站：send() 用 REST 回复（im.message.reply），worker 完成路径经 ctx.channel.send 路由到此处。
+ */
+export default class LarkAdapter extends Service implements ChannelAdapter {
+  readonly id = 'lark'
+
+  static inject = ['channel', 'channelStore']
 
   static Config = z.object({
     appId: z.string().min(1),
@@ -27,9 +32,10 @@ export default class LarkService extends Service {
   private readonly LOGGER_LEVEL = lark.LoggerLevel.error
   private readonly client: lark.Client
   private readonly ws: lark.WSClient
+  private started = false
 
-  constructor(ctx: Context, config: z.infer<typeof LarkService.Config>) {
-    super(ctx, 'lark')
+  constructor(ctx: Context, config: z.infer<typeof LarkAdapter.Config>) {
+    super(ctx, 'larkAdapter')
 
     const larkConfig = {
       appId: config.appId,
@@ -50,22 +56,25 @@ export default class LarkService extends Service {
   }
 
   async start() {
+    if (this.started) return
+    this.started = true
     this.watchDispatcher()
   }
 
-  async close() {
+  async stop() {
     this.ws.close()
+    this.started = false
   }
 
-  async reply(messageId: string, text: string): Promise<boolean> {
+  async send(reply: OutboundReply): Promise<boolean> {
     try {
       await this.client.im.message.reply({
-        path: { message_id: messageId },
-        data: { content: JSON.stringify({ text }), msg_type: 'text' }
+        path: { message_id: reply.messageId },
+        data: { content: JSON.stringify({ text: reply.text }), msg_type: 'text' }
       })
       return true
     } catch (error) {
-      logger.error('[lark] 回复失败: ', { messageId, error: stringify(error) })
+      logger.error('[lark] 回复失败: ', { messageId: reply.messageId, error })
       return false
     }
   }
@@ -87,47 +96,32 @@ export default class LarkService extends Service {
   }
 
   private async handleReceiveV1Message(msg: LarkMessage): Promise<void> {
-    const stringifyMsg = stringify(msg)
-    console.log('🤖 收到飞书消息: ', stringifyMsg)
-
-    const threadId = resolveThreadId(msg)
-    if (!threadId) {
-      logger.error('无 threadId 无法确认场景', stringifyMsg)
+    const rawThreadId = resolveThreadId(msg)
+    if (!rawThreadId) {
+      logger.error('无 threadId 无法确认场景', msg)
       return
     }
 
-    const chatId = msg.message.chat_id
-    const messageId = msg.message.message_id
     const openId = msg.sender.sender_id?.open_id
+    const senderName = openId ? await this.getUserName(openId) : undefined
 
-    const senderName = openId ? await this.getUserName(openId) : 'unknown'
-    const content = parseMessageContent(msg)
-
-    this.ctx.channelLark.insertLarkMessage({
-      eventType: msg.event_type ?? '',
-      appId: msg.app_id ?? '',
-      chatId,
+    const inbound: InboundMessage = {
+      channel: 'lark',
+      threadId: `lark:${rawThreadId}`,
+      chatId: msg.message.chat_id,
       chatType: msg.message.chat_type,
-      messageId,
-      messageType: msg.message.message_type,
-      threadId: msg.message.thread_id ?? null,
-      senderOpenId: openId ?? null,
-      senderType: msg.sender.sender_type,
-      senderName,
-      content
-    })
+      messageId: msg.message.message_id,
+      text: parseMessageContent(msg),
+      raw: msg,
+      ...(openId ? { senderId: openId } : {}),
+      ...(senderName ? { senderName } : {})
+    }
 
-    // 写 thread
-    this.ctx.threads.ensureThread(threadId, msg.message.chat_type, chatId, openId ?? null)
-    this.ctx.traces.insertTrace(threadId, messageId, chatId, content)
-
-    this.ctx.emit('message/received', threadId, content)
-
-    await this.reply(messageId, '🤔 正在思考中…')
+    await this.ctx.channel.dispatch(inbound)
   }
 
-  private async getUserName(openId: string): Promise<string> {
-    const cached = this.ctx.channelLark.getUserName(openId)
+  private async getUserName(openId: string): Promise<string | undefined> {
+    const cached = this.ctx.channelStore.getUserName('lark', openId)
     if (cached) return cached
 
     try {
@@ -137,12 +131,12 @@ export default class LarkService extends Service {
       })
       const name = res.data?.user?.name
       if (name) {
-        this.ctx.channelLark.upsertUser(openId, name)
+        this.ctx.channelStore.upsertUser('lark', openId, name)
         return name
       }
     } catch (err) {
       logger.error('[lark] 获取用户信息失败: ', err)
     }
-    return openId
+    return undefined
   }
 }

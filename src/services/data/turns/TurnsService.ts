@@ -4,8 +4,8 @@ import { agentTurns } from '@/services/data/database/schema'
 
 export type AgentTurnRecord = typeof agentTurns.$inferSelect
 
-/** 插入一行 turn 记录所需字段（id / createdAt 由数据库生成） */
-export type InsertTurnParams = Omit<AgentTurnRecord, 'id' | 'createdAt'>
+/** 插入一行 turn 记录所需字段（id / createdAt 由数据库生成；可空列可省略） */
+export type InsertTurnParams = typeof agentTurns.$inferInsert
 
 declare module 'cordis' {
   interface Context {

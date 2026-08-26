@@ -4,7 +4,6 @@ import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from 'cordis'
 import { Service } from 'cordis'
-import { AIMessage } from '@langchain/core/messages'
 import DatabaseService from '../src/services/data/database/DatabaseService'
 import ThreadsService from '../src/services/data/threads/ThreadsService'
 import TracesService, {
@@ -14,7 +13,8 @@ import TracesService, {
 import { agentTraces } from '../src/services/data/database/schema'
 import { eq, sql } from 'drizzle-orm'
 import WorkerService from '../src/services/worker/WorkerService'
-import CapabilityService from '../src/services/capability/CapabilityService'
+import CapabilityService from '../src/services/agent/capability/CapabilityService'
+import type { OutboundReply } from '../src/services/channel/types'
 
 /** mock agent：记录调用（含 agentId），可配置 identify 结果 / 失败 / 挂起等待放行 */
 class MockAgentService extends Service {
@@ -36,7 +36,7 @@ class MockAgentService extends Service {
     if (MockAgentService.gate) await MockAgentService.gate
     MockAgentService.calls.push({ input, threadId, agentId })
     this.ctx.emit('agent/input', threadId, input)
-    this.ctx.emit('agent/result', threadId, 'mock-node', new AIMessage('mock reply'))
+    this.ctx.emit('agent/result', threadId, 'mock-node', { text: 'mock reply' })
     return 'mock reply'
   }
 
@@ -46,16 +46,17 @@ class MockAgentService extends Service {
   }
 }
 
-/** mock lark：记录出站回复调用（worker 完成路径直调） */
-class MockLarkService extends Service {
-  static replies: { messageId: string; text: string }[] = []
+/** mock channel：记录出站回复调用（worker 完成路径经 ctx.channel.send 路由） */
+class MockChannelService extends Service {
+  static sends: OutboundReply[] = []
 
   constructor(ctx: Context) {
-    super(ctx, 'lark')
+    super(ctx, 'channel')
   }
 
-  async reply(messageId: string, text: string) {
-    MockLarkService.replies.push({ messageId, text })
+  async send(reply: OutboundReply) {
+    MockChannelService.sends.push(reply)
+    return true
   }
 }
 
@@ -65,7 +66,7 @@ ctx.plugin(ThreadsService)
 ctx.plugin(TracesService)
 await ctx.plugin(CapabilityService)
 ctx.plugin(MockAgentService)
-ctx.plugin(MockLarkService)
+ctx.plugin(MockChannelService)
 await ctx.plugin(WorkerService)
 
 beforeEach(() => {
@@ -74,7 +75,7 @@ beforeEach(() => {
   MockAgentService.identifyCalls = 0
   MockAgentService.failNext = false
   MockAgentService.gate = null
-  MockLarkService.replies = []
+  MockChannelService.sends = []
   ctx.database.exec('DELETE FROM agent_traces')
   ctx.database.exec('DELETE FROM agent_threads')
   ctx.worker.stop()
@@ -90,7 +91,7 @@ async function waitUntil(fn: () => boolean, timeoutMs = 3000) {
 
 function seedTrace(threadId: string, text: string): number {
   ctx.threads.ensureThread(threadId, 'p2p', 'chat-1', null)
-  return ctx.traces.insertTrace(threadId, 'm-1', 'chat-1', text)
+  return ctx.traces.insertTrace(threadId, 'm-1', 'chat-1', text, 'lark')
 }
 
 test('worker 消费 pending trace → done，且广播 trace/status', async () => {
@@ -113,8 +114,10 @@ test('worker 消费 pending trace → done，且广播 trace/status', async () =
   assert.equal(MockAgentService.calls[0]?.input, 'hello')
   assert.equal(MockAgentService.calls[0]?.threadId, 't1')
   assert.deepEqual(statuses, [TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE])
-  // 完成路径直调 lark 出站回复（A2：回复由 worker 发起，不再依赖事件订阅）
-  assert.deepEqual(MockLarkService.replies, [{ messageId: 'm-1', text: 'mock reply' }])
+  // 完成路径经 channel 路由出站回复（worker 不感知具体渠道）
+  assert.deepEqual(MockChannelService.sends, [
+    { channel: 'lark', messageId: 'm-1', text: 'mock reply' }
+  ])
 })
 
 test('worker run 失败 → trace failed，且广播 trace/status', async () => {
@@ -135,10 +138,10 @@ test('worker run 失败 → trace failed，且广播 trace/status', async () => 
   })
 
   assert.deepEqual(statuses, [TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED])
-  // 失败也直调出站回复错误信息
-  assert.equal(MockLarkService.replies.length, 1)
-  assert.equal(MockLarkService.replies[0]?.messageId, 'm-1')
-  assert.ok(MockLarkService.replies[0]!.text.startsWith('Agent 处理失败：mock agent fail'))
+  // 失败也经 channel 路由出站回复错误信息
+  assert.equal(MockChannelService.sends.length, 1)
+  assert.equal(MockChannelService.sends[0]?.messageId, 'm-1')
+  assert.ok(MockChannelService.sends[0]!.text.startsWith('Agent 处理失败：mock agent fail'))
 })
 
 test('队列空时不消费（无 pending 记录，start/stop 正常）', async () => {
@@ -209,7 +212,9 @@ test('启动恢复：进程崩溃遗留的超时 processing trace 被重置并�
   })
 
   assert.equal(MockAgentService.calls.length, 1)
-  assert.deepEqual(MockLarkService.replies, [{ messageId: 'm-1', text: 'mock reply' }])
+  assert.deepEqual(MockChannelService.sends, [
+    { channel: 'lark', messageId: 'm-1', text: 'mock reply' }
+  ])
 })
 
 test('启动恢复：新鲜的 processing（其他实例正在跑）不被误伤', async t => {
@@ -254,7 +259,7 @@ test('已绑定 thread：直接用绑定 agent，不再识别', async t => {
   t.after(() => ctx.worker.stop())
   ctx.threads.ensureThread('t2', 'p2p', 'chat-1', null)
   ctx.threads.setAgentId('t2', 'kb-bot')
-  const traceId = ctx.traces.insertTrace('t2', 'm-1', 'chat-1', 'hi')
+  const traceId = ctx.traces.insertTrace('t2', 'm-1', 'chat-1', 'hi', 'lark')
   MockAgentService.identifyResult = 'kb-bot'
 
   ctx.worker.start()

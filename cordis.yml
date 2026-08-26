@@ -22,8 +22,14 @@
 - id: turns
   name: ./src/services/data/turns/TurnsService.ts
 
-- id: channel-lark
-  name: ./src/services/data/channel-lark/ChannelLarkService.ts
+- id: channel-store
+  name: ./src/services/data/channels/ChannelStoreService.ts
+
+- id: capability
+  name: ./src/services/agent/capability/CapabilityService.ts
+  config:
+    root: !!js process.env.SYSTEM_TOOLS_ROOT ?? 'data/workspace'
+    commands: !!js (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean)
 
 - id: agent
   name: ./src/services/agent/AgentService.ts
@@ -36,15 +42,18 @@
 - id: agent-demo
   name: ./src/plugins/agent-demo.ts
 
-- id: lark
-  name: ./src/services/lark/LarkService.ts
+- id: channel
+  name: ./src/services/channel/ChannelService.ts
+
+- id: lark-adapter
+  name: ./src/services/channel/adapters/lark/LarkAdapter.ts
   config:
     appId: !!js process.env.LARK_APP_ID
     appSecret: !!js process.env.LARK_APP_SECRET
     domain: !!js process.env.LARK_DOMAIN ?? 'feishu'
 
-- id: channel
-  name: ./src/plugins/channel.ts
+- id: channel-lark
+  name: ./src/plugins/channel-lark.ts
 
 - id: worker
   name: ./src/services/worker/WorkerService.ts

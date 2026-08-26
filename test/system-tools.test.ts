@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ClientTool } from '@langchain/core/tools'
-import CapabilityService from '../src/services/capability/CapabilityService'
+import CapabilityService from '../src/services/agent/capability/CapabilityService'
 
 async function setup(opts?: { root: string; cwd?: string; commands?: string[] }) {
   const ctx = new Context()

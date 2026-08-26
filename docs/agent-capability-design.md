@@ -22,14 +22,14 @@
 
 ## 1. 现状与问题（来自代码）
 
-| 现状                                                                                                    | 问题                                                                   |
-| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `AgentService` 单例：一个 `ChatOpenAI` + 一个 `systemPrompt` 字符串 + 一个 `tools: ClientTool[]`        | 能力全局唯一一份，无法按 agent / 场景差异化；skills 无概念             |
-| 注册点只有 `registerTools(tools)` / `setSystemPrompt(prompt)`，改动即 `agent = undefined` 下次 run 重建 | 逐对象失效，无版本概念；只支持"替换全局"，不支持具名增删               |
-| tools / prompt 来自 `src/toy/*`，由 `agent-demo` 插件启动时一次性注入                                   | 来源只有"代码硬注册"；无 skill 元数据、无触发条件、无按需加载          |
-| systemPrompt 是单段字符串                                                                               | 无法分层组装（身份/角色/技能/约束），无法在组装期被插件拦截改写        |
-| 无知识库 / 长期记忆 / 守卫 / 模型路由 / per-agent 策略                                                  | 能力面缺失（详见 §2）                                                  |
-| worker 完成路径直调 `ctx.lark.reply()`                                                                  | 渠道耦合，web/console 等新渠道要改 worker（TODO 已记"responder 待做"） |
+| 现状                                                                                                    | 问题                                                                         |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `AgentService` 单例：一个 `ChatOpenAI` + 一个 `systemPrompt` 字符串 + 一个 `tools: ClientTool[]`        | 能力全局唯一一份，无法按 agent / 场景差异化；skills 无概念                   |
+| 注册点只有 `registerTools(tools)` / `setSystemPrompt(prompt)`，改动即 `agent = undefined` 下次 run 重建 | 逐对象失效，无版本概念；只支持"替换全局"，不支持具名增删                     |
+| tools / prompt 来自 `src/toy/*`，由 `agent-demo` 插件启动时一次性注入                                   | 来源只有"代码硬注册"；无 skill 元数据、无触发条件、无按需加载                |
+| systemPrompt 是单段字符串                                                                               | 无法分层组装（身份/角色/技能/约束），无法在组装期被插件拦截改写              |
+| 无知识库 / 长期记忆 / 守卫 / 模型路由 / per-agent 策略                                                  | 能力面缺失（详见 §2）                                                        |
+| worker 完成路径直调 `ctx.lark.reply()`                                                                  | 渠道耦合，web/console 等新渠道要改 worker（已解决：`channel` 抽象，见 §2.9） |
 
 **核心问题**：`agent` Service 把"能力是什么"（数据）和"能力怎么跑"（执行）焊在了一起，且数据面只有一个全局槽位。
 
@@ -78,7 +78,7 @@ systemPrompt 不是一段字符串，而是**可分层、可扩展的组装产�
 | **系统工具** | `read_file` / `write_file` / `list_dir` / `glob` / `grep` / `edit_file` / `run_command` | CapabilityService 构造时 seed，`assemble` 自动并入**每个** agent，与领域无关 |
 | **领域工具** | 天气工具、knowledge_search 等                                                           | 插件按需 `registerTool` 注册，definition/skill 引用挂载                      |
 
-实现要点（`src/services/capability/systemTools.ts`）：
+实现要点（`src/services/agent/capability/systemTools.ts`）：
 
 - **沙箱**：文件工具 root 可配（默认 `data/workspace`），路径解析防 `../`/绝对路径逃逸；读取/搜索结果截断（4000 字符 + offset 续读 / 100 条上限）。
 - **run_command 受限**：cwd + 超时 + 命令白名单前缀（默认空 = 禁用）；拒绝链式/注入操作符（`&& || ; |` 反引号 `$()` `${}`）。**演示级护栏，不是真安全边界**。
@@ -113,9 +113,9 @@ systemPrompt 不是一段字符串，而是**可分层、可扩展的组装产�
 - 已有：`agent/*` 五个事件 + turn-recorder / console-demo / traces。
 - 增强：token 用量、耗时、错误分类进事件 payload（langchain 的 usage metadata 有）；多 agent 后事件 payload 带 `agentId`。
 
-### 2.9 渠道抽象（P2）
+### 2.9 渠道抽象（✅ 已落地，2025-08-26 重构）
 
-- worker 直调 `lark.reply()` 改为通用 `responder`：trace 记录 `channel + messageId`，完成路径按 trace 查 responder 回消息。新渠道（web/console）不碰 worker。与能力注入正交，但多 agent 落地前建议一起做。
+- worker 直调 `lark.reply()` 已改为通用 `channel` 抽象：`ChannelAdapter` 接口（`src/services/channel/types.ts`）+ `ChannelService.register/dispatch/send`；trace 记录 `channel + messageId`，worker 完成路径经 `ctx.channel.send()` 路由回对应 adapter。新渠道（telegram/console）= 实现 `ChannelAdapter` + 注册，不碰 worker。入站管线（落库/建 thread/入队/回执/广播）统一在 `dispatch`。
 
 ### 2.10 运行时策略（P2）
 
@@ -262,7 +262,7 @@ worker poll 抢锁 → process(trace)：
 ### P2：多 agent + 渠道 + 策略（路由部分 ✅，其余待做）
 
 - [x] 多 AgentDefinition + `agent_id` 路由：worker `process` 收口（绑定 → `agent/resolve` 规则 → `identify` LLM 兜底 → default），threads 表加列，见 §3.6
-- [ ] `responder` 渠道抽象（worker 不再直调 lark）
+- [x] `channel` 渠道抽象（worker 不再直调 lark）：`ChannelAdapter` + `ChannelService.register/dispatch/send`，见 §2.9
 - [ ] per-agent 超时/预算/限流
 
 ---

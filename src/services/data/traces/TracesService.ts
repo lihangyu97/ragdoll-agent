@@ -28,11 +28,17 @@ export default class TracesService extends Service {
     super(ctx, 'traces')
   }
 
-  /** 插入一条消息 trace（pending），返回新记录 id */
-  insertTrace(threadId: string, messageId: string, chatId: string, inputText: string): number {
+  /** 插入一条消息 trace（pending），返回新记录 id；channel 为来源渠道（出站回复路由依据） */
+  insertTrace(
+    threadId: string,
+    messageId: string,
+    chatId: string,
+    inputText: string,
+    channel: string
+  ): number {
     const [row] = this.ctx.database.db
       .insert(agentTraces)
-      .values({ threadId, messageId, chatId, inputText, status: TRACE_STATUS.PENDING })
+      .values({ threadId, messageId, chatId, inputText, channel, status: TRACE_STATUS.PENDING })
       .returning({ id: agentTraces.id })
       .all()
     return row?.id ?? 0

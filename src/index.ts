@@ -5,12 +5,13 @@ import DatabaseService from '@/services/data/database/DatabaseService'
 import TracesService from '@/services/data/traces/TracesService'
 import ThreadsService from '@/services/data/threads/ThreadsService'
 import TurnsService from '@/services/data/turns/TurnsService'
-import ChannelLarkService from '@/services/data/channel-lark/ChannelLarkService'
-import CapabilityService from '@/services/capability/CapabilityService'
+import ChannelStoreService from '@/services/data/channels/ChannelStoreService'
+import CapabilityService from '@/services/agent/capability/CapabilityService'
 import AgentService from '@/services/agent/AgentService'
-import LarkService from '@/services/lark/LarkService'
+import ChannelService from '@/services/channel/ChannelService'
+import LarkAdapter from '@/services/channel/adapters/lark/LarkAdapter'
 import WorkerService from '@/services/worker/WorkerService'
-import channel from '@/plugins/channel'
+import channelLark from '@/plugins/channel-lark'
 import agentDemo from '@/plugins/agent-demo'
 import worker from '@/plugins/worker'
 import turnRecorder from '@/plugins/turn-recorder'
@@ -43,7 +44,7 @@ app.plugin(DatabaseService, { dbPath: process.env.DB_PATH ?? 'data/agent.db' })
 app.plugin(TracesService)
 app.plugin(ThreadsService)
 app.plugin(TurnsService)
-app.plugin(ChannelLarkService)
+app.plugin(ChannelStoreService)
 app.plugin(CapabilityService, {
   root: process.env.SYSTEM_TOOLS_ROOT ?? 'data/workspace',
   commands: (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean)
@@ -55,12 +56,13 @@ app.plugin(AgentService, {
   dbPath: process.env.DB_PATH ?? 'data/agent.db'
 })
 app.plugin(agentDemo)
-app.plugin(LarkService, {
+app.plugin(ChannelService, { thinkingReply: '🤔 正在思考中…' })
+app.plugin(LarkAdapter, {
   appId: process.env.LARK_APP_ID!,
   appSecret: process.env.LARK_APP_SECRET!,
   domain: process.env.LARK_DOMAIN === 'lark' ? 'lark' : 'feishu'
 })
-app.plugin(channel)
+app.plugin(channelLark)
 app.plugin(WorkerService)
 app.plugin(worker)
 app.plugin(turnRecorder)

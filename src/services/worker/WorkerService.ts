@@ -29,7 +29,7 @@ const POLL_INTERVAL_MS = 3_000
  * （路由归属 → agent.run → 出站回复）。
  */
 export default class WorkerService extends Service {
-  static inject = ['agent', 'capability', 'traces', 'threads', 'lark']
+  static inject = ['agent', 'capability', 'traces', 'threads', 'channel']
 
   private timer: ReturnType<typeof setInterval> | null = null
   private processing = false
@@ -136,8 +136,9 @@ export default class WorkerService extends Service {
     return agentId
   }
 
+  /** 完成路径出站回复：按 trace.channel 路由到对应渠道 adapter（worker 不感知具体渠道） */
   private async replyIfNeeded(trace: AgentTraceRecord, text: string | null) {
-    if (!trace.messageId || !text) return
-    await this.ctx.lark.reply(trace.messageId, text)
+    if (!trace.channel || !trace.messageId || !text) return
+    await this.ctx.channel.send({ channel: trace.channel, messageId: trace.messageId, text })
   }
 }

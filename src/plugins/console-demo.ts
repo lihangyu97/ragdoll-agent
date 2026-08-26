@@ -8,16 +8,16 @@ export default {
       console.log(`[input] thread=${threadId}: ${input}`)
     })
 
-    ctx.on('agent/tool-call', (threadId, node, msg) => {
-      console.log(`[${node}] ${msg.type} toolCalls: ${JSON.stringify(msg.tool_calls)}`)
+    ctx.on('agent/tool-call', (threadId, node, step) => {
+      console.log(`[${node}] toolCalls: ${JSON.stringify(step.toolCalls)}`)
     })
 
-    ctx.on('agent/tool-result', (threadId, node, msg) => {
-      console.log(`[${node}] ${msg.type}(${msg.tool_call_id}): ${msg.text}`)
+    ctx.on('agent/tool-result', (threadId, node, step) => {
+      console.log(`[${node}] tool(${step.toolCallId}): ${step.text}`)
     })
 
-    ctx.on('agent/result', (threadId, node, msg) => {
-      console.log(`[${node}] ${msg.type}: ${msg.text}`)
+    ctx.on('agent/result', (threadId, node, step) => {
+      console.log(`[${node}] ${step.text}`)
     })
   }
 }

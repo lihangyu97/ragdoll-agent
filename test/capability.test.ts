@@ -3,12 +3,12 @@ import assert from 'node:assert/strict'
 import { Context } from 'cordis'
 import { z } from 'zod'
 import { tool } from '@langchain/core/tools'
-import CapabilityService from '../src/services/capability/CapabilityService'
+import CapabilityService from '../src/services/agent/capability/CapabilityService'
 import type {
   AgentDefinition,
   AgentSpec,
   Skill
-} from '../src/services/capability/CapabilityService'
+} from '../src/services/agent/capability/CapabilityService'
 
 async function setup() {
   const ctx = new Context()

@@ -22,7 +22,7 @@ beforeEach(() => {
 
 function seedTrace(threadId: string, text: string, messageId = 'm-1') {
   ctx.threads.ensureThread(threadId, 'p2p', 'chat-1', null)
-  ctx.traces.insertTrace(threadId, messageId, 'chat-1', text)
+  ctx.traces.insertTrace(threadId, messageId, 'chat-1', text, 'lark')
 }
 
 function getStatus(traceId: number): string | undefined {
@@ -123,5 +123,5 @@ test('resetStaleProcessingTraces：新鲜的 processing 不重置（多实例安
 })
 
 test('FK：插入不存在的 thread_id 抛约束错误', () => {
-  assert.throws(() => ctx.traces.insertTrace('no-such-thread', 'm-x', 'chat-1', 'hello'))
+  assert.throws(() => ctx.traces.insertTrace('no-such-thread', 'm-x', 'chat-1', 'hello', 'lark'))
 })

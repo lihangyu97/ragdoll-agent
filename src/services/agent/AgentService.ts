@@ -15,6 +15,7 @@ import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { stringify } from '@/utils'
 import { threadContext } from '@/utils/context'
 import logger from '@/utils/logger'
+import type { AgentResultEvent, AgentToolCallEvent, AgentToolResultEvent } from './steps'
 
 declare module 'cordis' {
   interface Context {
@@ -22,9 +23,10 @@ declare module 'cordis' {
   }
   interface Events {
     'agent/input': (threadId: string, input: string) => void
-    'agent/tool-call': (threadId: string, node: string, msg: AIMessage) => void
-    'agent/tool-result': (threadId: string, node: string, msg: ToolMessage) => void
-    'agent/result': (threadId: string, node: string, msg: BaseMessage) => void
+    // 事件载荷为框架无关结构（steps.ts）；langchain 消息在 run 内部转换后再发出
+    'agent/tool-call': (threadId: string, node: string, step: AgentToolCallEvent) => void
+    'agent/tool-result': (threadId: string, node: string, step: AgentToolResultEvent) => void
+    'agent/result': (threadId: string, node: string, step: AgentResultEvent) => void
     'agent/error': (threadId: string, error: string) => void
     'agent/timeout': (threadId: string) => void
   }
@@ -104,13 +106,23 @@ export default class AgentService extends Service {
           for (const [node, update] of Object.entries(step)) {
             for (const msg of update.messages ?? []) {
               if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
-                this.ctx.emit('agent/tool-call', threadId, node, msg)
+                this.ctx.emit('agent/tool-call', threadId, node, {
+                  toolCalls: msg.tool_calls.map(call => ({
+                    id: call.id ?? '',
+                    name: call.name,
+                    args: call.args
+                  }))
+                })
               } else if (ToolMessage.isInstance(msg)) {
-                this.ctx.emit('agent/tool-result', threadId, node, msg)
+                this.ctx.emit('agent/tool-result', threadId, node, {
+                  toolCallId: msg.tool_call_id,
+                  text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+                })
               } else {
-                this.ctx.emit('agent/result', threadId, node, msg)
-                if (typeof msg.content === 'string' && msg.content) {
-                  answer = msg.content // 最后一次非工具消息即最终答案
+                const text = typeof msg.content === 'string' ? msg.content : ''
+                this.ctx.emit('agent/result', threadId, node, { text })
+                if (text) {
+                  answer = text // 最后一次非工具消息即最终答案
                 }
               }
             }

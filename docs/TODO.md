@@ -55,7 +55,7 @@
 - [x] `capability` Service：prompt/tool/skill/definition 注册表 + `version` 失效 + `assemble(def)` → AgentSpec
 - [x] AgentDefinition + 组装管线（basePrompt → persona → 技能目录/全文）+ `agent/prompt-build` waterfall 改写点
 - [x] `catalog` 模式 + `load_skill(name)` 懒加载工具（full 模式可选）
-- [x] **系统工具（平台执行原语）**：read_file/write_file/list_dir/glob/grep/edit_file/run_command 内置 seed，自动并入每个 agent（沙箱 root + 截断 + run_command 白名单/超时；`src/services/capability/systemTools.ts`）
+- [x] **系统工具（平台执行原语）**：read_file/write_file/list_dir/glob/grep/edit_file/run_command 内置 seed，自动并入每个 agent（沙箱 root + 截断 + run_command 白名单/超时；`src/services/agent/capability/systemTools.ts`）
 - [x] toy weather 迁移成 skill（`src/toy/weather-skill.ts`），`agent-demo` 改用新 API，`agent` Service 删旧 `registerTools/setSystemPrompt` 改版本失效重建
 - [x] 单测 `test/capability.test.ts`（13 用例）+ `test/system-tools.test.ts`（10 用例）+ 全量 48 用例 + typecheck 全绿
 - [ ] P1：knowledge（FTS5）/ guardrails（`agent/before-input`）/ 观测增强（token/耗时）——见设计文档 §5
@@ -74,6 +74,21 @@
 ## 其他
 
 - [ ] 超时报错：搞个通过的超时报错函数（waterfall 构建 systemprompt 已在 capability P0 落地）
+
+## 渠道抽象 + agent 契约中立化 ✅（2025-08-26，feat/channel-adapter）
+
+**方案**：`ChannelAdapter` 接口（出入站一体）+ `ChannelService`（register/dispatch/send 统一入站管线）+ 通用渠道表（channel_messages / channel_users）+ agent/* 事件载荷框架无关化。
+
+- [x] schema：`channel_messages` / `channel_users` 通用表（替代 `channel_lark` / `channel_lark_user`）、`agent_traces.channel` 列、`agent_threads.sender_id`（替代 sender_open_id）、`agent_turns` 去 `msg_type`；drizzle 迁移重建
+- [x] `ChannelStoreService` 替代 `ChannelLarkService`（channel + userId 维度）
+- [x] `ChannelService` + `types.ts`（ChannelAdapter / InboundMessage / OutboundReply）；dispatch 统一入站管线（落库 → 建 thread → 入队 → 回执 → 广播）
+- [x] `LarkService` → `LarkAdapter`（实现 ChannelAdapter，`src/services/channel/adapters/lark/`）；threadId 加 `lark:` 前缀命名空间
+- [x] worker 去 lark 依赖：`inject` 换 `channel`，完成路径 `ctx.channel.send({channel, messageId, text})`
+- [x] agent/* 事件载荷中立化（`src/services/agent/steps.ts`）；turn-recorder / console-demo 不再 import `@langchain/*`（langchain 依赖收敛到 `src/services/agent/` 内部 + toy）
+- [x] 目录调整：capability 移入 `src/services/agent/capability/`；lark 移入 `src/services/channel/adapters/`；`channel` 插件 → `channel-lark`
+- [x] 验证：typecheck + 58 用例全绿（新增 `test/channel.test.ts` 3 用例）+ 整树冒烟（内存 DB + stub adapter 全链路）
+
+- [ ] P2 待做：telegram adapter（实现 ChannelAdapter 验证插拔）、换 agent 框架时拆 backend（当前改动已把泄漏堵死）
 
 ## worker 多实例：无主 trace 心跳租约回收（方案已定，实施待定）
 

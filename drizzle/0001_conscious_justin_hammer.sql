@@ -1,1 +1,0 @@
-ALTER TABLE `agent_threads` ADD `agent_id` text;
