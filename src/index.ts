@@ -6,6 +6,7 @@ import TracesService from '@/services/data/traces/TracesService'
 import ThreadsService from '@/services/data/threads/ThreadsService'
 import TurnsService from '@/services/data/turns/TurnsService'
 import ChannelLarkService from '@/services/data/channel-lark/ChannelLarkService'
+import CapabilityService from '@/services/capability/CapabilityService'
 import AgentService from '@/services/agent/AgentService'
 import LarkService from '@/services/lark/LarkService'
 import WorkerService from '@/services/worker/WorkerService'
@@ -43,6 +44,10 @@ app.plugin(TracesService)
 app.plugin(ThreadsService)
 app.plugin(TurnsService)
 app.plugin(ChannelLarkService)
+app.plugin(CapabilityService, {
+  root: process.env.SYSTEM_TOOLS_ROOT ?? 'data/workspace',
+  commands: (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean)
+})
 app.plugin(AgentService, {
   apiKey: process.env.OPENAI_API_KEY!,
   baseUrl: process.env.OPENAI_BASE_URL!,

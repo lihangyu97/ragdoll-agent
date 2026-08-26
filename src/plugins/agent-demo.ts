@@ -1,16 +1,21 @@
 import type { Context } from 'cordis'
 import _tools from '@/toy/tools'
-import _systemPrompt from '@/toy/systemPrompt'
+import _weatherSkill from '@/toy/weather-skill'
 
 /**
- * demo 插件：加载即把 toy 的工具/提示词注册进 agent Service（启动装配期一次性注册）。
- * 后续加工具 = 新增插件 + 配一行，不用改 agent 核心。
+ * demo 插件：注册 toy 工具 + weather skill，并组装默认 agent（skills 挂 weather）。
+ * 加能力 = 新注册行 / 新注册插件，不用改 agent 核心。
  */
 export default {
   name: 'agent-demo',
-  inject: ['agent'],
+  inject: ['capability'],
   apply(ctx: Context) {
-    ctx.agent.registerTools(_tools)
-    ctx.agent.setSystemPrompt(_systemPrompt)
+    for (const t of _tools) ctx.capability.registerTool(t)
+    ctx.capability.registerSkill(_weatherSkill)
+    ctx.capability.registerDefinition({
+      id: 'default',
+      basePrompt: 'You are a helpful assistant. Always reply in Chinese (中文).',
+      skills: ['weather']
+    })
   }
 }

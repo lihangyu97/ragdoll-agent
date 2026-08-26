@@ -48,6 +48,33 @@
 
 **决策**：暂不加，等数据量真上来了（或显示工具出现明显慢查询）再落到 `DatabaseService.initSchema` 的 `CREATE INDEX IF NOT EXISTS`（跟随现有清库重建流程，无迁移）。
 
+## Agent 能力模型（capability Service）✅（P0 完成，2025-08-26）
+
+**方案见 `docs/agent-capability-design.md`**（评审通过：独立 capability Service / skills catalog 懒加载 / P0 只做注册表+组装+skills / 多 agent 推迟 P2）。
+
+- [x] `capability` Service：prompt/tool/skill/definition 注册表 + `version` 失效 + `assemble(def)` → AgentSpec
+- [x] AgentDefinition + 组装管线（basePrompt → persona → 技能目录/全文）+ `agent/prompt-build` waterfall 改写点
+- [x] `catalog` 模式 + `load_skill(name)` 懒加载工具（full 模式可选）
+- [x] **系统工具（平台执行原语）**：read_file/write_file/list_dir/glob/grep/edit_file/run_command 内置 seed，自动并入每个 agent（沙箱 root + 截断 + run_command 白名单/超时；`src/services/capability/systemTools.ts`）
+- [x] toy weather 迁移成 skill（`src/toy/weather-skill.ts`），`agent-demo` 改用新 API，`agent` Service 删旧 `registerTools/setSystemPrompt` 改版本失效重建
+- [x] 单测 `test/capability.test.ts`（13 用例）+ `test/system-tools.test.ts`（10 用例）+ 全量 48 用例 + typecheck 全绿
+- [ ] P1：knowledge（FTS5）/ guardrails（`agent/before-input`）/ 观测增强（token/耗时）——见设计文档 §5
+- [ ] 真实链路验证：飞书 → worker → agent（catalog 懒加载 → load_skill → 天气工具）→ 回复
+
+## 多 agent 路由 ✅（2025-08-26，P2 路由部分）
+
+**方案见 `docs/agent-capability-design.md` §3.6**（讨论结论：worker `process` 收口，绑定 → 规则 → LLM 识别 → default）。
+
+- [x] `agent_threads` 加 `agent_id` 列（drizzle 迁移 0001）；`threads.getAgentId/setAgentId`
+- [x] `AgentService`：`run(input, threadId, agentId='default')` + `Map<agentId, runtime>` 版本失效；`identify()` agentClient（无状态 router，withStructuredOutput 输出 `{agentId|null}`，清单来自 `capability.listDefinitions()`）
+- [x] `WorkerService.process` 收口：已绑定直接用 → `agent/resolve` bail 规则层 → `identify` LLM 兜底 → `hasDefinition` 校验 → 降级 default → 绑定标记
+- [x] `CapabilityService.listDefinitions()/hasDefinition()`
+- [x] 单测：worker 路由 5 用例（未绑定→default / 已绑定不识别 / 规则命中 / 识别命中 / 识别不存在降级）+ threads 绑定 + capability 辅助，全量 55 用例 + typecheck 全绿
+
+## 其他
+
+- [ ] 超时报错：搞个通过的超时报错函数（waterfall 构建 systemprompt 已在 capability P0 落地）
+
 ## worker 多实例：无主 trace 心跳租约回收（方案已定，实施待定）
 
 **背景**：现实现"启动时 + 静态阈值（10min）"回收（`resetStaleProcessingTraces`）有两个局限——
@@ -58,5 +85,3 @@
 - [ ] 回收从"仅启动时"升级为"周期 sweep"（每次 poll 或独立 60s 定时器），多实例安全
 - [ ] 实施时机：上多实例（pm2）时与部署一起做；真长任务时 `AGENT_RUN_TIMEOUT_MS` 可配置化
 - [ ] 注意：恢复 = 至少一次语义，工具副作用需幂等（见方案 §4）
-
-- [ ] waterfall 构建 systemprompt，tools 等，超时报错，搞个通过的超时报错函数

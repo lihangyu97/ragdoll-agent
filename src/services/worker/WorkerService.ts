@@ -16,16 +16,20 @@ declare module 'cordis' {
   interface Events {
     // 后续观察状态可能有用...
     'trace/status': (threadId: string, status: TraceStatus) => void
+    // 规则层路由策略点（bail）：监听器返回 agentId 即命中（确定性规则，如群绑定/命令/关键词）；
+    // 全部未命中则走 agentClient LLM 识别兜底
+    'agent/resolve': (threadId: string, input: string) => string | void
   }
 }
 
 const POLL_INTERVAL_MS = 3_000
 
 /**
- * worker Service：周期轮询 agent_traces 队列，取 pending 记录调用 ctx.agent.run 处理。
+ * worker Service：周期轮询 agent_traces 队列，取 pending 记录交给 process 处理
+ * （路由归属 → agent.run → 出站回复）。
  */
 export default class WorkerService extends Service {
-  static inject = ['agent', 'traces', 'lark']
+  static inject = ['agent', 'capability', 'traces', 'threads', 'lark']
 
   private timer: ReturnType<typeof setInterval> | null = null
   private processing = false
@@ -75,7 +79,7 @@ export default class WorkerService extends Service {
         )
         if (!locked) continue
 
-        await this.handle(trace)
+        await this.process(trace)
       }
     } catch (err) {
       logger.error('[worker] 轮询异常: ', err)
@@ -84,17 +88,25 @@ export default class WorkerService extends Service {
     }
   }
 
-  private async handle(trace: AgentTraceRecord) {
+  /**
+   * process：trace 消费入口（worker 不再直接 run）。
+   * 1. thread 已绑定 agent → 直接用；
+   * 2. 未绑定 → 规则层（agent/resolve bail 事件）→ 未命中则 agentClient 识别（LLM 兜底）；
+   * 3. 识别 null / 失败 / agent 不存在 → 降级 default；
+   * 4. 绑定 thread（一次性定终身）→ run → 出站回复。
+   */
+  private async process(trace: AgentTraceRecord) {
     this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.PROCESSING)
 
     await threadContext.run(trace.threadId, async () => {
       logger.info('[worker] 开始处理')
       try {
-        const answer = await this.ctx.agent.run(trace.inputText, trace.threadId)
+        const agentId = await this.resolveAgentId(trace)
+        const answer = await this.ctx.agent.run(trace.inputText, trace.threadId, agentId)
 
         this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
         this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.DONE)
-        logger.info('[worker] agent run done')
+        logger.info(`[worker] agent run done (agent=${agentId})`)
         await this.replyIfNeeded(trace, answer)
       } catch (err) {
         this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
@@ -103,6 +115,25 @@ export default class WorkerService extends Service {
         await this.replyIfNeeded(trace, `Agent 处理失败：${stringify(err)}`)
       }
     })
+  }
+
+  /** 路由归属：已绑定 → 规则 → LLM 识别 → default */
+  private async resolveAgentId(trace: AgentTraceRecord): Promise<string> {
+    const bound = this.ctx.threads.getAgentId(trace.threadId)
+    if (bound) return bound
+
+    const rule = this.ctx.bail('agent/resolve', trace.threadId, trace.inputText)
+    if (rule && this.ctx.capability.hasDefinition(rule)) {
+      this.ctx.threads.setAgentId(trace.threadId, rule)
+      return rule
+    }
+
+    const identified = await this.ctx.agent.identify(trace.inputText)
+    const agentId =
+      identified && this.ctx.capability.hasDefinition(identified) ? identified : 'default'
+    this.ctx.threads.setAgentId(trace.threadId, agentId)
+    logger.info(`[worker] thread ${trace.threadId} 绑定 agent=${agentId}`)
+    return agentId
   }
 
   private async replyIfNeeded(trace: AgentTraceRecord, text: string | null) {

@@ -1,5 +1,6 @@
 import { Service, type Context } from 'cordis'
 import { agentThreads, THREAD_STATUS } from '@/services/data/database/schema'
+import { eq } from 'drizzle-orm'
 
 export { THREAD_STATUS } from '@/services/data/database/schema'
 export type { ThreadStatus } from '@/services/data/database/schema'
@@ -26,6 +27,25 @@ export default class ThreadsService extends Service {
       .insert(agentThreads)
       .values({ threadId, chatType, chatId, senderOpenId, status: THREAD_STATUS.ACTIVE })
       .onConflictDoNothing()
+      .run()
+  }
+
+  /** 读取 thread 绑定的 agent definition id（null = 未识别） */
+  getAgentId(threadId: string): string | null {
+    const row = this.ctx.database.db
+      .select({ agentId: agentThreads.agentId })
+      .from(agentThreads)
+      .where(eq(agentThreads.threadId, threadId))
+      .get()
+    return row?.agentId ?? null
+  }
+
+  /** 绑定 thread → agent definition id（worker process 首次消费时调用，一次性定终身） */
+  setAgentId(threadId: string, agentId: string) {
+    this.ctx.database.db
+      .update(agentThreads)
+      .set({ agentId })
+      .where(eq(agentThreads.threadId, threadId))
       .run()
   }
 }

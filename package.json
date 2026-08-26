@@ -9,7 +9,7 @@
     "start": "tsx src/index.ts",
     "start:yml": "tsx scripts/start-yml.ts",
     "seed": "tsx scripts/seed.ts",
-    "test": "DB_PATH=:memory: tsx --test test/database.test.ts test/traces.test.ts test/threads.test.ts test/worker.test.ts test/turn-recorder.test.ts",
+    "test": "DB_PATH=:memory: tsx --test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",

@@ -4,11 +4,17 @@ import { Service, type Context } from 'cordis'
 import { z } from 'zod'
 import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
-import { AIMessage, ToolMessage, BaseMessage } from '@langchain/core/messages'
+import {
+  AIMessage,
+  ToolMessage,
+  BaseMessage,
+  SystemMessage,
+  HumanMessage
+} from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
-import type { ClientTool } from '@langchain/core/tools'
 import { stringify } from '@/utils'
 import { threadContext } from '@/utils/context'
+import logger from '@/utils/logger'
 
 declare module 'cordis' {
   interface Context {
@@ -27,7 +33,14 @@ declare module 'cordis' {
 /** agent 单次执行的整体超时（毫秒）：覆盖多轮 LLM + 工具循环，超时通过 signal abort */
 const AGENT_RUN_TIMEOUT_MS = 5 * 60_000
 
+/** 路由识别（identify）的结构化输出 */
+const IDENTIFY_SCHEMA = z.object({
+  agentId: z.string().nullable().describe('选中的 agent definition id；无法确定时返回 null')
+})
+
 export default class AgentService extends Service {
+  static inject = ['capability']
+
   static Config = z.object({
     apiKey: z.string().min(1),
     baseUrl: z.string().min(1),
@@ -37,9 +50,8 @@ export default class AgentService extends Service {
 
   private readonly model: ChatOpenAI
   private readonly checkpointer: SqliteSaver
-  private agent: ReturnType<typeof createAgent> | undefined
-  private tools: ClientTool[] = []
-  private systemPrompt: string = ''
+  /** 按 agentId 的运行时缓存：capability 注册表 version 变更即全部失效，下次 run 重建 */
+  private runtimes = new Map<string, { version: number; agent: ReturnType<typeof createAgent> }>()
 
   constructor(ctx: Context, config: z.infer<typeof AgentService.Config>) {
     super(ctx, 'agent')
@@ -64,19 +76,8 @@ export default class AgentService extends Service {
     return checkpointer
   }
 
-  // 下次 run 时重建 agent
-  registerTools(tools: ClientTool[]) {
-    this.tools.push(...tools)
-    this.agent = undefined
-  }
-
-  // 下次 run 时重建 agent
-  setSystemPrompt(prompt: string) {
-    this.systemPrompt = prompt
-    this.agent = undefined
-  }
-
-  async run(input: string, threadId: string): Promise<string | null> {
+  // 能力注入走 capability 注册表：注册变更 → version 递增 → 下次 run 重建 agent
+  async run(input: string, threadId: string, agentId = 'default'): Promise<string | null> {
     let answer: string | null = null
 
     await threadContext.run(threadId, async () => {
@@ -87,11 +88,11 @@ export default class AgentService extends Service {
       }, AGENT_RUN_TIMEOUT_MS)
 
       try {
-        const agent = this.ensureAgent()
+        const agent = await this.ensureAgent(agentId)
         this.ctx.emit('agent/input', threadId, input)
 
         const stream = await agent.stream(
-          { messages: [{ role: 'user', content: input }] },
+          { messages: [new HumanMessage(input)] },
           {
             streamMode: 'updates',
             signal: controller.signal,
@@ -125,15 +126,54 @@ export default class AgentService extends Service {
     return answer
   }
 
-  private ensureAgent(): ReturnType<typeof createAgent> {
-    if (!this.agent) {
-      this.agent = createAgent({
-        model: this.model,
-        tools: this.tools,
-        systemPrompt: this.systemPrompt,
-        checkpointer: this.checkpointer
+  /**
+   * 路由识别（agentClient）：判断一条未绑定 thread 的消息该交给哪个 agent。
+   * 轻量无状态 router：无 checkpointer、无系统工具，withStructuredOutput 强制 {agentId | null}。
+   * 识别失败/超时 → null（调用方降级 default）；agentId 合法性由调用方用 capability.hasDefinition 校验。
+   */
+  async identify(input: string, chatType = ''): Promise<string | null> {
+    const definitions = this.ctx.capability.listDefinitions()
+    const catalog = definitions
+      .map(d => `- ${d.id}：${d.basePrompt.split('\n')[0]?.slice(0, 80) ?? ''}`)
+      .join('\n')
+
+    const system = new SystemMessage(
+      `你是 agent 路由器，只输出 JSON。根据用户消息判断该交给哪个助手处理。\n可用助手：\n${catalog}\n` +
+        '规则：\n1. 根据用户意图选择最合适的助手 id；\n' +
+        '2. 无法确定、或不需要任何助手时返回 null。\n' +
+        '输出格式：{"agentId": "助手 id 或 null"}，不要解释。'
+    )
+    const human = new HumanMessage(
+      chatType ? `会话类型：${chatType}\n用户消息：${input}` : `用户消息：${input}`
+    )
+
+    try {
+      // jsonMode：中转站对 functionCalling 的 tool_choice 支持不稳（thinking 模式报 400），
+      // json_object 要求 prompt 里出现 "json" 字样（上面已包含）
+      const classifier = this.model.withStructuredOutput(IDENTIFY_SCHEMA, { method: 'jsonMode' })
+      const result = await classifier.invoke([system, human])
+      return result.agentId
+    } catch (err) {
+      logger.warn('[agent] 路由识别失败，降级 null: ', stringify(err))
+      return null
+    }
+  }
+
+  private async ensureAgent(agentId: string): Promise<ReturnType<typeof createAgent>> {
+    const version = this.ctx.capability.version
+    const entry = this.runtimes.get(agentId)
+    if (!entry || entry.version !== version) {
+      const spec = await this.ctx.capability.assemble(agentId)
+      this.runtimes.set(agentId, {
+        version,
+        agent: createAgent({
+          model: this.model,
+          tools: spec.tools,
+          systemPrompt: spec.systemPrompt,
+          checkpointer: this.checkpointer
+        })
       })
     }
-    return this.agent
+    return this.runtimes.get(agentId)!.agent
   }
 }

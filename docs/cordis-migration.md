@@ -12,11 +12,12 @@
 **Services**（各带 `static inject` 声明依赖；实现见 `src/services/*`，数据层在 `src/services/data/`）：
 
 - **数据层**（`src/services/data/`）：**`database`**（better-sqlite3 连接 getDb + 暴露 drizzle 实例，构造时 `migrate` 应用 schema 迁移）、**`traces` / `threads` / `turns` / `channelLark`**（薄 repository，内部查询用 drizzle（同步 builder：`.all()/.get()/.run()`），注入 database；`TRACE_STATUS` / `THREAD_STATUS` 常量与表定义统一在 `database/schema.ts`）
-- **`agent`**：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播五个 `agent/*` 类型化事件；`registerTools()` / `setSystemPrompt()` 作为 tools/prompt 注册点
+- **`agent`**：懒加载 model/checkpointer/agent，`ctx.agent.run(input, threadId)`，广播五个 `agent/*` 类型化事件；能力（tools/prompt/skills）经 `capability` 注册表注入（见 §5）
+- **`capability`**：能力注册表 + 组装器（prompt/tool/skill/definition + `assemble` → AgentSpec；agent 消费快照，version 失效重建）
 - **`lark`**：入站生产（落库 channel_lark → ensureThread → insertTrace → 回"正在思考"）+ 出站 `reply()`（REST）；不订阅 `agent/*`（回复由 worker 完成路径直调）
-- **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → `ctx.agent.run` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底已做：**启动时回收超时（>10min，`STALE_PROCESSING_MINUTES`）的无主 processing trace** 重置回 pending（只回收超时的，不误伤其他实例正在跑的，多实例安全）；完成路径直调 `ctx.lark.reply()` 出站回复
+- **`worker`**：周期轮询 `agent_traces`（3s interval，tick 内消费到空，启动立即消费一轮），抢锁 → **`process` 收口（路由归属：thread 已绑定直接用 → `agent/resolve` 规则 → `identify` LLM 识别兜底 → 降级 default → 标记 thread）** → `ctx.agent.run(input, threadId, agentId)` → done/failed；仅 `timer` + `processing` 防重入两个状态；崩溃/重启残留兜底已做：**启动时回收超时（>10min，`STALE_PROCESSING_MINUTES`）的无主 processing trace** 重置回 pending（只回收超时的，不误伤其他实例正在跑的，多实例安全）；完成路径直调 `ctx.lark.reply()` 出站回复
 
-**Plugins**（`src/plugins/*`）：`channel`（lark 生命周期）、`worker`（worker 生命周期）、`agent-demo`（注入 toy tools/prompt）、`turn-recorder`（订阅 agent/* 写 agent_turns，以 agent/input 为轮次边界）、`console-demo`（订阅 agent/* 打印，原 toy/loggerHooks）
+**Plugins**（`src/plugins/*`）：`channel`（lark 生命周期）、`worker`（worker 生命周期）、`agent-demo`（经 capability 注册 toy 工具/weather skill/默认定义）、`turn-recorder`（订阅 agent/* 写 agent_turns，以 agent/input 为轮次边界）、`console-demo`（订阅 agent/* 打印，原 toy/loggerHooks）
 
 **事件**：`agent/*` 五个 + 领域层 `message/received`（lark 入队后广播）、`trace/status`（worker 状态流转广播）
 
@@ -57,14 +58,14 @@
 | `sqlite/agentTraces`                                 | **`traces` Service**                                      | ✅         | 队列能力：enqueue / 抢锁 / 状态流转                                                                         |
 | `sqlite/agentThreads` / `agentTurns` / `channelLark` | `threads` / `turns` / `channelLark` Service               | ✅         | 1:1 repository                                                                                              |
 | `logger` + `logger/context`                          | 并入 `@/utils/logger` **模块**（非 Service）              | ✅（决策） | cordis 内置 `ctx.logger` 占名；按待决问题"倾向保留自定义"处理，改动最小；`AsyncLocalStorage` 线程上下文保留 |
-| `agent/index`                                        | **`agent` Service**                                       | ✅         | `ctx.agent.run`；tools/prompt 插件注入                                                                      |
+| `agent/index`                                        | **`agent` Service**                                       | ✅         | `ctx.agent.run`；能力经 `capability` 注册表注入（§5）                                                       |
 | `agent/checkpointer`                                 | agent Service 内部依赖                                    | ✅         | 内联 SqliteSaver                                                                                            |
 | `agent/hooks`（HookBus）                             | **删除 → cordis 事件系统**                                | ✅         | 文件已删                                                                                                    |
 | `agent/turn`（AgentTurn）                            | **`turn-recorder` Plugin**                                | ✅         | 订阅 agent/* 写库                                                                                           |
 | `worker`                                             | **`worker` Service + Plugin**                             | ✅         | 轮询循环由插件 effect 包 start/stop；注入 `agent` + `traces` + `lark`（完成路径直调出站回复）               |
 | `channels/lark`                                      | **`lark` Service**                                        | ✅         | 入站（WS 收消息）+ 出站（`reply()` REST；回复由 worker 直调，不再订阅 agent/*）                             |
 | `channels/lark/message`                              | lark Service 内部纯函数工具                               | ✅         | `src/services/lark/message.ts`                                                                              |
-| `toy/tools`、`systemPrompt`                          | **`agent-demo` Plugin**                                   | ✅         | 注册工具/提示词                                                                                             |
+| `toy/tools`、`systemPrompt`                          | **`capability` Service + `agent-demo` Plugin**            | ✅         | toy 迁成 weather skill；agent-demo 注册工具/skill/默认定义（§5）                                            |
 | `toy/loggerHooks`                                    | **`console-demo` Plugin**                                 | ✅         | 订阅 agent/* 打印                                                                                           |
 | `config/*`（已删，配置内联到各 Service）             | 各 Service `static Config`（zod schema）+ 根入口传 config | ✅         | 配置统一从 env 读入经 cordis Config 校验 → 缺配置插件 FAILED（ValidationError 可见）                        |
 | `application` + `index`                              | 根：`new Context()` → `ctx.plugin(...)`                   | ✅         | 信号处理 + uncaught 兜底 + cordis 日志 console exporter 都在根上                                            |
@@ -105,10 +106,13 @@ agent 服务直接发五种静态类型化事件，node 作为载荷字段（不
 
 ---
 
-## 5. tools/prompt 插件注入（已落地）
+## 5. 能力注入（capability Service，2025-08-26 取代 tools/prompt 直注）
 
-- `agent` Service 暴露 `registerTools()` / `setSystemPrompt()` 注册点，懒构建 + 失效缓存（下次 run 重建）
-- `agent-demo` 插件加载即注入 toy 工具/提示词；加工具 = 新插件 + 配一行，不用改 agent 核心
+- **`capability` Service**（`src/services/capability/CapabilityService.ts`）：能力注册表 + 组装器（数据面）。`registerPrompt / registerTool / registerSkill / registerDefinition`（+ unregister），注册即 version +1；`assemble(def)` 按 **AgentDefinition**（声明式规格）产出 AgentSpec 快照（systemPrompt + tools）。
+- **系统工具 = 平台执行原语**：read_file/write_file/list_dir/glob/grep/edit_file/run_command 由 `src/services/capability/systemTools.ts` 生成，构造时 seed，**自动并入每个 agent**（沙箱 root + 截断 + run_command 白名单/超时；演示级护栏，非真安全边界）。
+- **组装管线**：basePrompt → persona（具名 prompt 段）→ 技能目录/全文；skills 默认 **catalog 懒加载**（prompt 只放技能目录 + 内置 `load_skill(name)` 工具按需取全文，`full` 模式可全量注入）；组装期可经 `agent/prompt-build` waterfall 事件改写。
+- **`agent` Service**：消费快照懒构建 langchain agent；capability `version` 变更即失效、下次 run 重建（替代旧的 `registerTools()/setSystemPrompt()`）。`agent-demo` 插件改为注册 toy 工具 + weather skill + 默认定义。
+- 完整方案见 `docs/agent-capability-design.md`（§2.3.1 系统工具、§3 注入机制）。
 
 ---
 
@@ -117,11 +121,12 @@ agent 服务直接发五种静态类型化事件，node 作为载荷字段（不
 ```
 database（构造时建表）
 traces / threads / turns / channelLark → inject [database]
-agent ←（自持 model/checkpointer；插件注入 tools/prompt）
+agent ←（自持 model/checkpointer；能力快照来自 capability）
+capability:    注册表 + 组装（无依赖）
 lark:           inject [channelLark, threads, traces]（入站 WS + 出站 reply()；不订阅 agent/*）
-worker:         inject [agent, traces, lark]（轮询队列 + 状态流转 + 完成路径直调 lark 出站回复）
+worker:         inject [agent, capability, traces, threads, lark]（轮询队列 + process 路由归属（绑定→规则→LLM 识别→default）+ 状态流转 + 完成路径直调 lark 出站回复）
 turn-recorder:  inject [turns]（订阅 agent/* 写库）
-agent-demo:     inject [agent]（注册工具/提示词）
+agent-demo:     inject [capability]（注册工具/skill/默认定义）
 logger:         @/utils/logger 模块（非 Service，落库走 @/utils/sqlite 的 insertLog/getDb）
 ```
 
