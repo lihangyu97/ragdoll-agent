@@ -6,7 +6,6 @@ import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
 import { AIMessage, ToolMessage, BaseMessage } from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
-import type { ClientTool } from '@langchain/core/tools'
 import { stringify } from '@/utils'
 import { threadContext } from '@/utils/context'
 
@@ -28,6 +27,8 @@ declare module 'cordis' {
 const AGENT_RUN_TIMEOUT_MS = 5 * 60_000
 
 export default class AgentService extends Service {
+  static inject = ['capability']
+
   static Config = z.object({
     apiKey: z.string().min(1),
     baseUrl: z.string().min(1),
@@ -37,9 +38,8 @@ export default class AgentService extends Service {
 
   private readonly model: ChatOpenAI
   private readonly checkpointer: SqliteSaver
-  private agent: ReturnType<typeof createAgent> | undefined
-  private tools: ClientTool[] = []
-  private systemPrompt: string = ''
+  /** 运行时缓存：capability 注册表 version 变更即失效，下次 run 重建 */
+  private runtime: { version: number; agent: ReturnType<typeof createAgent> } | undefined
 
   constructor(ctx: Context, config: z.infer<typeof AgentService.Config>) {
     super(ctx, 'agent')
@@ -64,18 +64,7 @@ export default class AgentService extends Service {
     return checkpointer
   }
 
-  // 下次 run 时重建 agent
-  registerTools(tools: ClientTool[]) {
-    this.tools.push(...tools)
-    this.agent = undefined
-  }
-
-  // 下次 run 时重建 agent
-  setSystemPrompt(prompt: string) {
-    this.systemPrompt = prompt
-    this.agent = undefined
-  }
-
+  // 能力注入走 capability 注册表：注册变更 → version 递增 → 下次 run 重建 agent
   async run(input: string, threadId: string): Promise<string | null> {
     let answer: string | null = null
 
@@ -87,7 +76,7 @@ export default class AgentService extends Service {
       }, AGENT_RUN_TIMEOUT_MS)
 
       try {
-        const agent = this.ensureAgent()
+        const agent = await this.ensureAgent()
         this.ctx.emit('agent/input', threadId, input)
 
         const stream = await agent.stream(
@@ -125,15 +114,20 @@ export default class AgentService extends Service {
     return answer
   }
 
-  private ensureAgent(): ReturnType<typeof createAgent> {
-    if (!this.agent) {
-      this.agent = createAgent({
-        model: this.model,
-        tools: this.tools,
-        systemPrompt: this.systemPrompt,
-        checkpointer: this.checkpointer
-      })
+  private async ensureAgent(): Promise<ReturnType<typeof createAgent>> {
+    const version = this.ctx.capability.version
+    if (!this.runtime || this.runtime.version !== version) {
+      const spec = await this.ctx.capability.assemble('default')
+      this.runtime = {
+        version,
+        agent: createAgent({
+          model: this.model,
+          tools: spec.tools,
+          systemPrompt: spec.systemPrompt,
+          checkpointer: this.checkpointer
+        })
+      }
     }
-    return this.agent
+    return this.runtime.agent
   }
 }

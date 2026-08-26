@@ -48,6 +48,22 @@
 
 **决策**：暂不加，等数据量真上来了（或显示工具出现明显慢查询）再落到 `DatabaseService.initSchema` 的 `CREATE INDEX IF NOT EXISTS`（跟随现有清库重建流程，无迁移）。
 
+## Agent 能力模型（capability Service）✅（P0 完成，2025-08-26）
+
+**方案见 `docs/agent-capability-design.md`**（评审通过：独立 capability Service / skills catalog 懒加载 / P0 只做注册表+组装+skills / 多 agent 推迟 P2）。
+
+- [x] `capability` Service：prompt/tool/skill/definition 注册表 + `version` 失效 + `assemble(def)` → AgentSpec
+- [x] AgentDefinition + 组装管线（basePrompt → persona → 技能目录/全文）+ `agent/prompt-build` waterfall 改写点
+- [x] `catalog` 模式 + `load_skill(name)` 懒加载工具（full 模式可选）
+- [x] toy weather 迁移成 skill（`src/toy/weather-skill.ts`），`agent-demo` 改用新 API，`agent` Service 删旧 `registerTools/setSystemPrompt` 改版本失效重建
+- [x] 单测 `test/capability.test.ts`（12 用例）+ 全量 38 用例 + typecheck 全绿
+- [ ] P1：knowledge（FTS5）/ guardrails（`agent/before-input`）/ 观测增强（token/耗时）——见设计文档 §5
+- [ ] 真实链路验证：飞书 → worker → agent（catalog 懒加载 → load_skill → 天气工具）→ 回复
+
+## 其他
+
+- [ ] 超时报错：搞个通过的超时报错函数（waterfall 构建 systemprompt 已在 capability P0 落地）
+
 ## worker 多实例：无主 trace 心跳租约回收（方案已定，实施待定）
 
 **背景**：现实现"启动时 + 静态阈值（10min）"回收（`resetStaleProcessingTraces`）有两个局限——
@@ -58,5 +74,3 @@
 - [ ] 回收从"仅启动时"升级为"周期 sweep"（每次 poll 或独立 60s 定时器），多实例安全
 - [ ] 实施时机：上多实例（pm2）时与部署一起做；真长任务时 `AGENT_RUN_TIMEOUT_MS` 可配置化
 - [ ] 注意：恢复 = 至少一次语义，工具副作用需幂等（见方案 §4）
-
-- [ ] waterfall 构建 systemprompt，tools 等，超时报错，搞个通过的超时报错函数
