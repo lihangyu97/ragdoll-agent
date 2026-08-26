@@ -104,12 +104,13 @@ export default class LarkAdapter extends Service implements ChannelAdapter {
 
     const openId = msg.sender.sender_id?.open_id
     const senderName = openId ? await this.getUserName(openId) : undefined
+    const chatType = msg.message.chat_type
 
     const inbound: InboundMessage = {
       channel: 'lark',
-      threadId: `lark:${rawThreadId}`,
+      threadId: `lark:${chatType}:${rawThreadId}`,
+      chatType: chatType,
       chatId: msg.message.chat_id,
-      chatType: msg.message.chat_type,
       messageId: msg.message.message_id,
       text: parseMessageContent(msg),
       raw: msg,
