@@ -42,6 +42,11 @@
 - id: agent-demo
   name: ./src/plugins/weather/index.ts
 
+- id: skill-loader
+  name: ./src/plugins/skill-loader.ts
+  config:
+    skillsRoot: !!js process.env.SKILLS_ROOT ?? 'skills'
+
 - id: channel
   name: ./src/services/channel/ChannelService.ts
 

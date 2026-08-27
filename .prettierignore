@@ -1,0 +1,4 @@
+# pnpm 自己管理 lockfile 格式，prettier 的 yaml 格式化会与其冲突
+pnpm-lock.yaml
+# 技能是作者内容（frontmatter/表格格式自由），不套 prettier
+skills/

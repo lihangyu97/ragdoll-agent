@@ -4,13 +4,7 @@ import { Service, type Context } from 'cordis'
 import { z } from 'zod'
 import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
-import {
-  AIMessage,
-  ToolMessage,
-  BaseMessage,
-  SystemMessage,
-  HumanMessage
-} from '@langchain/core/messages'
+import { AIMessage, ToolMessage, SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { stringify } from '@/utils'
 import { threadContext } from '@/utils/context'
@@ -101,6 +95,8 @@ export default class AgentService extends Service {
       try {
         const agent = await this.ensureAgent(agentId)
         this.ctx.emit('agent/input', { threadId, turnNo, input })
+
+        // todo thread 新增个 system_prompt 字段 这里看看怎么拿到然后写进去
 
         const stream = await agent.stream(
           { messages: [new HumanMessage(input)] },

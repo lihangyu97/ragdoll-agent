@@ -92,7 +92,7 @@ test('full 模式：instructions 全量注入，无 load_skill', async () => {
   assert.deepEqual(domainTools(spec), ['getLocation', 'getWeather'])
 })
 
-test('load_skill 返回技能全文（含 resources）；未知技能返回可恢复提示', async () => {
+test('load_skill：不传 resource 返回说明+文件索引；传 resource 返回文件内容；未知返回可恢复提示', async () => {
   const ctx = await setup()
   ctx.capability.registerTool(fakeTool('getLocation'))
   ctx.capability.registerTool(fakeTool('getWeather'))
@@ -104,11 +104,23 @@ test('load_skill 返回技能全文（含 resources）；未知技能返回可�
 
   const spec = await ctx.capability.assemble()
   const loadSkill = spec.tools.find(t => t.name === 'load_skill')!
+
+  // 不传 resource：说明 + 文件索引，不内联文件内容（渐进披露省 token）
   const text = await loadSkill.invoke({ name: 'weather' })
   assert.ok(text.includes(weather.instructions))
-  assert.ok(text.includes('faq'))
-  assert.ok(text.includes('天气接口偶发超时'))
+  assert.ok(text.includes('- faq'))
+  assert.ok(!text.includes('天气接口偶发超时'))
 
+  // 传 resource：返回文件内容
+  const content = await loadSkill.invoke({ name: 'weather', resource: 'faq' })
+  assert.ok(content.includes('天气接口偶发超时'))
+
+  // 未知文件：可恢复提示（带可用文件列表）
+  const badResource = await loadSkill.invoke({ name: 'weather', resource: 'nope.md' })
+  assert.ok(badResource.includes('没有文件：nope.md'))
+  assert.ok(badResource.includes('faq'))
+
+  // 未知技能：可恢复提示
   const missing = await loadSkill.invoke({ name: 'nope' })
   assert.ok(missing.includes('未找到技能：nope'))
   assert.ok(missing.includes('可用技能：weather'))

@@ -143,7 +143,8 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 全部经 `ctx.capability` 注册（`src/services/agent/capability/CapabilityService.ts`），注册即 `version +1` → agent 运行时失效重建：
 
 - `registerTool(tool)`：领域工具（langchain `ClientTool`）；系统工具（read_file/write_file/…，平台原语）构造时 seed，自动进每个 agent，不可同名注册/注销
-- `registerSkill(skill)`：`{ name, description, trigger?, instructions, resources?, tools? }`；默认 `catalog` 懒加载（prompt 只放目录 + 内置 `load_skill(name)` 工具），小技能集可 `full` 全量注入
+- `registerSkill(skill)`：`{ name, description, trigger?, instructions, resources?, tools?, license?, compatibility?, metadata?, scripts? }`；默认 `catalog` 懒加载（prompt 只放目录 + 内置 `load_skill(name)` 工具，支持 `resource` 参数按需加载技能文件，渐进披露对齐 agentskills.io 规范），小技能集可 `full` 全量注入
+- **文件技能（agentskills.io 标准格式）**：`skill-loader` 插件启动时扫描 `skillsRoot`（默认 `skills`，`SKILLS_ROOT` env）下 `<name>/SKILL.md`（YAML frontmatter + 正文），校验命名/必填后注册进 capability；`references/` `assets/` `scripts/` 下文本文件进 `resources`（scripts 另有 `scripts` 索引，执行能力后续再加）；与代码注册同名 → 文件版覆盖。`license`/`compatibility`/`metadata` 为宿主侧字段，存而不渲染（不进 prompt）
 - `registerDefinition(def)`：`{ id, basePrompt, personas?, skills?, skillMode?, tools? }` 声明式规格，`assemble(def)` 产出 `AgentSpec`（systemPrompt + tools）
 
 ## 6. 待办

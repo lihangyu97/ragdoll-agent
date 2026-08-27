@@ -17,17 +17,31 @@ declare module 'cordis' {
   }
 }
 
-/** 技能：可复用的任务指令包（与来源无关，P0 只支持代码注册） */
+/** 技能：可复用的任务指令包（与来源无关：代码注册 / 文件加载（agentskills.io 标准格式）） */
 export interface Skill {
   name: string
   description: string
-  /** 触发场景/关键词（进技能目录，帮助模型判断何时使用） */
+  /** 触发场景/关键词（进技能目录，帮助模型判断何时使用）；标准格式技能无此字段则省略 */
   trigger?: string
   instructions: string
   /** 数据文件（如 FAQ 文本、模板），load_skill 时一并返回 */
   resources?: Record<string, string>
   /** 该技能约定使用的工具名（引用全局注册的工具，不自带） */
   tools?: string[]
+  /** 技能来源：'code'（registerSkill 注册）| 'file'（skill-loader 从 skillsRoot 扫描） */
+  source?: 'code' | 'file'
+  /**
+   * 以下为宿主侧信息（agentskills.io 标准格式字段），**不进 prompt**：
+   * catalog 目录行 / full 注入 / load_skill 返回都不渲染，仅存储供宿主校验与来源追踪。
+   */
+  /** License（如 Apache-2.0） */
+  license?: string
+  /** 环境要求（宿主加载时对照本机环境检查用，当前仅存储） */
+  compatibility?: string
+  /** 任意键值元数据（作者/版本等，来源追踪/调试用） */
+  metadata?: Record<string, string>
+  /** scripts/ 下可执行文件路径索引（内容同时进 resources 供读取；执行能力 P2 再上） */
+  scripts?: string[]
 }
 
 /** 声明式组装规格：声明"要什么能力"，assemble 时拼成 AgentSpec 快照 */
@@ -137,6 +151,11 @@ export default class CapabilityService extends Service {
     this.assertExists(this.skills, name, 'skill')
     this.skills.delete(name)
     this._version++
+  }
+
+  /** skill 是否存在（skill-loader 冲突策略用：同名文件技能覆盖代码技能） */
+  hasSkill(name: string): boolean {
+    return this.skills.has(name)
   }
 
   /** 同一 id 重复注册 = 覆盖（内置 default 定义可被业务定义替换） */
@@ -252,24 +271,61 @@ export default class CapabilityService extends Service {
   }
 
   private createLoadSkillTool(): ClientTool {
-    return tool(async ({ name }: { name: string }) => this.renderSkill(name), {
-      name: 'load_skill',
-      description: '加载技能详细说明（技能名从系统提示的"可用技能"目录中选取）',
-      schema: z.object({ name: z.string().describe('技能名') })
-    })
+    return tool(
+      async ({ name, resource }: { name: string; resource?: string }) =>
+        this.renderSkill(name, resource),
+      {
+        name: 'load_skill',
+        description:
+          '加载技能详细说明（技能名从系统提示的"可用技能"目录中选取）。不传 resource 返回技能说明与可加载文件索引；传 resource（如 references/REFERENCE.md）返回该文件内容。',
+        schema: z.object({
+          name: z.string().describe('技能名'),
+          resource: z
+            .string()
+            .optional()
+            .describe(
+              '技能文件相对路径（从 load_skill 返回的文件索引中选取），不传则只返回说明与索引'
+            )
+        })
+      }
+    )
   }
 
-  /** load_skill 实现：返回技能全文（instructions + resources）；技能不存在时返回可恢复提示，不 throw，模型可自行纠正 */
-  private renderSkill(name: string): string {
+  /**
+   * load_skill 实现（渐进披露，对齐 agentskills.io 规范）：
+   * - 不传 resource：技能说明 + 可加载文件索引（不内联文件内容，省 token）
+   * - 传 resource：返回该文件内容
+   * 技能/文件不存在时返回可恢复提示，不 throw，模型可自行纠正。
+   */
+  private renderSkill(name: string, resource?: string): string {
     const skill = this.skills.get(name)
     if (!skill) {
       return `未找到技能：${name}。可用技能：${[...this.skills.keys()].join('、') || '无'}。`
     }
+    const files = this.skillFileIndex(skill)
+
+    if (resource) {
+      const content = skill.resources?.[resource]
+      if (content === undefined) {
+        return `技能 ${name} 没有文件：${resource}。可加载文件：${files.join('、') || '无'}。`
+      }
+      return `# 技能：${skill.name} › ${resource}\n\n${content}`
+    }
+
     const lines = [`# 技能：${skill.name}`, skill.instructions]
-    for (const [key, value] of Object.entries(skill.resources ?? {})) {
-      lines.push(`## 资源：${key}\n\n${value}`)
+    if (files.length) {
+      lines.push(
+        `## 文件\n\n需要时用 load_skill(name, resource) 加载具体文件内容：\n${files
+          .map(f => `- ${f}`)
+          .join('\n')}`
+      )
     }
     return lines.join('\n\n')
+  }
+
+  /** 技能可加载文件索引（references/ assets/ scripts/ 下文本文件；scripts 可读暂不可执行） */
+  private skillFileIndex(skill: Skill): string[] {
+    return Object.keys(skill.resources ?? {})
   }
 
   private assertUnique(map: Map<string, unknown>, name: string, kind: string) {
