@@ -4,8 +4,8 @@ import { agentTurns } from '@/services/data/database/schema'
 
 export type AgentTurnRecord = typeof agentTurns.$inferSelect
 
-/** 插入一行 turn 记录所需字段（id / createdAt 由数据库生成） */
-export type InsertTurnParams = Omit<AgentTurnRecord, 'id' | 'createdAt'>
+/** 插入一行 turn 记录所需字段（id / createdAt 由数据库生成；可空列可省略） */
+export type InsertTurnParams = typeof agentTurns.$inferInsert
 
 declare module 'cordis' {
   interface Context {
@@ -29,6 +29,11 @@ export default class TurnsService extends Service {
       .where(eq(agentTurns.threadId, threadId))
       .get()
     return row?.max ?? 0
+  }
+
+  /** 某 thread 的下一轮次号：当前最大轮次 + 1（无记录从 1 开始）。由 AgentService 在 input 时调用一次 */
+  nextTurnNo(threadId: string): number {
+    return this.getMaxTurnNo(threadId) + 1
   }
 
   /** 写入一行 turn 记录 */

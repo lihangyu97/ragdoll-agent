@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from 'cordis'
 import DatabaseService from '../src/services/data/database/DatabaseService'
-import { channelLark } from '../src/services/data/database/schema'
+import { channelMessages } from '../src/services/data/database/schema'
 import { getDb } from '../src/utils/sqlite'
 
 const ctx = new Context()
@@ -12,8 +12,8 @@ await ctx.plugin(DatabaseService, { dbPath: ':memory:' })
 
 test('migrate 应用 schema 迁移建出全部表', () => {
   const tables = [
-    'channel_lark',
-    'channel_lark_user',
+    'channel_messages',
+    'channel_users',
     'agent_turns',
     'agent_threads',
     'agent_traces',
@@ -28,7 +28,7 @@ test('migrate 应用 schema 迁移建出全部表', () => {
 })
 
 test('drizzle 实例可用（空表 select）', () => {
-  const rows = ctx.database.db.select().from(channelLark).all()
+  const rows = ctx.database.db.select().from(channelMessages).all()
   assert.deepEqual(rows, [])
 })
 

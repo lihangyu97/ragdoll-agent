@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0d93e3f9-58af-4edb-8b4f-01803bd1da5d",
+  "id": "2071a83a-5236-40bc-97a3-d04d8bf1797e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "agent_threads": {
@@ -28,8 +28,15 @@
           "notNull": true,
           "autoincrement": false
         },
-        "sender_open_id": {
-          "name": "sender_open_id",
+        "sender_id": {
+          "name": "sender_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "agent_id": {
+          "name": "agent_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -95,6 +102,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "input_text": {
@@ -183,13 +197,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "msg_type": {
-          "name": "msg_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "tool_call_id": {
           "name": "tool_call_id",
           "type": "text",
@@ -233,8 +240,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "channel_lark": {
-      "name": "channel_lark",
+    "channel_messages": {
+      "name": "channel_messages",
       "columns": {
         "id": {
           "name": "id",
@@ -243,15 +250,15 @@
           "notNull": true,
           "autoincrement": true
         },
-        "event_type": {
-          "name": "event_type",
+        "channel": {
+          "name": "channel",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "app_id": {
-          "name": "app_id",
+        "message_id": {
+          "name": "message_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -271,20 +278,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "message_id": {
-          "name": "message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "message_type": {
-          "name": "message_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "thread_id": {
           "name": "thread_id",
           "type": "text",
@@ -292,18 +285,11 @@
           "notNull": false,
           "autoincrement": false
         },
-        "sender_open_id": {
-          "name": "sender_open_id",
+        "sender_id": {
+          "name": "sender_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
-          "autoincrement": false
-        },
-        "sender_type": {
-          "name": "sender_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
           "autoincrement": false
         },
         "sender_name": {
@@ -313,8 +299,15 @@
           "notNull": false,
           "autoincrement": false
         },
-        "content": {
-          "name": "content",
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "extra": {
+          "name": "extra",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -335,8 +328,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "channel_lark_user": {
-      "name": "channel_lark_user",
+    "channel_users": {
+      "name": "channel_users",
       "columns": {
         "id": {
           "name": "id",
@@ -345,8 +338,15 @@
           "notNull": true,
           "autoincrement": true
         },
-        "open_id": {
-          "name": "open_id",
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -377,9 +377,9 @@
         }
       },
       "indexes": {
-        "channel_lark_user_open_id_unique": {
-          "name": "channel_lark_user_open_id_unique",
-          "columns": ["open_id"],
+        "channel_users_channel_user_id": {
+          "name": "channel_users_channel_user_id",
+          "columns": ["channel", "user_id"],
           "isUnique": true
         }
       },

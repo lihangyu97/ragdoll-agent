@@ -1,4 +1,4 @@
-import type { Skill } from '@/services/capability/CapabilityService'
+import type { Skill } from '@/services/agent/capability/CapabilityService'
 
 /**
  * weather skill：toy 演示技能（原 toy/systemPrompt 的工作流迁入 instructions）。

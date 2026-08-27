@@ -2,7 +2,8 @@ CREATE TABLE `agent_threads` (
 	`thread_id` text PRIMARY KEY NOT NULL,
 	`chat_type` text NOT NULL,
 	`chat_id` text NOT NULL,
-	`sender_open_id` text,
+	`sender_id` text,
+	`agent_id` text,
 	`status` text DEFAULT 'active' NOT NULL,
 	`created_at` text DEFAULT (datetime('now', 'localtime')),
 	`updated_at` text DEFAULT (datetime('now', 'localtime'))
@@ -13,6 +14,7 @@ CREATE TABLE `agent_traces` (
 	`thread_id` text NOT NULL,
 	`message_id` text NOT NULL,
 	`chat_id` text NOT NULL,
+	`channel` text,
 	`input_text` text NOT NULL,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`created_at` text DEFAULT (datetime('now', 'localtime')),
@@ -26,7 +28,6 @@ CREATE TABLE `agent_turns` (
 	`turn_no` integer NOT NULL,
 	`hook_type` text NOT NULL,
 	`node` text,
-	`msg_type` text,
 	`tool_call_id` text,
 	`tool_calls` text,
 	`content` text,
@@ -34,31 +35,30 @@ CREATE TABLE `agent_turns` (
 	`created_at` text DEFAULT (datetime('now', 'localtime'))
 );
 --> statement-breakpoint
-CREATE TABLE `channel_lark` (
+CREATE TABLE `channel_messages` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`event_type` text NOT NULL,
-	`app_id` text NOT NULL,
+	`channel` text NOT NULL,
+	`message_id` text NOT NULL,
 	`chat_id` text NOT NULL,
 	`chat_type` text NOT NULL,
-	`message_id` text NOT NULL,
-	`message_type` text NOT NULL,
 	`thread_id` text,
-	`sender_open_id` text,
-	`sender_type` text NOT NULL,
+	`sender_id` text,
 	`sender_name` text,
-	`content` text,
+	`text` text,
+	`extra` text,
 	`created_at` text DEFAULT (datetime('now', 'localtime'))
 );
 --> statement-breakpoint
-CREATE TABLE `channel_lark_user` (
+CREATE TABLE `channel_users` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`open_id` text NOT NULL,
+	`channel` text NOT NULL,
+	`user_id` text NOT NULL,
 	`name` text NOT NULL,
 	`created_at` text DEFAULT (datetime('now', 'localtime')),
 	`updated_at` text DEFAULT (datetime('now', 'localtime'))
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `channel_lark_user_open_id_unique` ON `channel_lark_user` (`open_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `channel_users_channel_user_id` ON `channel_users` (`channel`,`user_id`);--> statement-breakpoint
 CREATE TABLE `logger` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`level` text NOT NULL,

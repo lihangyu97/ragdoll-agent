@@ -26,7 +26,7 @@ test('ensureThread 创建记录，status 默认 active', () => {
   assert.ok(row)
   assert.equal(row.threadId, 't1')
   assert.equal(row.chatType, 'p2p')
-  assert.equal(row.senderOpenId, 'ou-1')
+  assert.equal(row.senderId, 'ou-1')
   assert.equal(row.status, THREAD_STATUS.ACTIVE)
 })
 

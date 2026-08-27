@@ -244,6 +244,10 @@ export function createSystemTools(options: SystemToolsOptions = {}): ClientTool[
       new_string: string
     }) => {
       const abs = safePath(path)
+      const info = await stat(abs)
+      if (info.size > 1_000_000) {
+        return `[system-tool] 文件过大（${info.size} 字节 > 1MB），edit_file 不支持，请用 read_file + write_file 分段处理`
+      }
       const content = await readFile(abs, 'utf-8')
       const count = content.split(old_string).length - 1
       if (count === 0) {
@@ -273,7 +277,8 @@ export function createSystemTools(options: SystemToolsOptions = {}): ClientTool[
       if (!commands.length) {
         return '[system-tool] 未配置允许执行的命令（CapabilityService systemTools.commands）'
       }
-      if (!commands.some(prefix => cmd.startsWith(prefix))) {
+      // 前缀需带空格边界（cmd === prefix 或 cmd 以 "prefix " 开头），防止 pnpm test-evil 这类前缀绕过
+      if (!commands.some(prefix => cmd === prefix || cmd.startsWith(prefix + ' '))) {
         return `[system-tool] 命令不在白名单: ${cmd}\n允许的前缀: ${commands.join(' / ')}`
       }
       if (/&&|\|\||;|\||`|\$\(|\$\{/.test(cmd)) {

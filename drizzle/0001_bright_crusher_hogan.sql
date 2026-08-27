@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX `agent_turns_thread_turn_input` ON `agent_turns` (`thread_id`,`turn_no`) WHERE hook_type = 'INPUT';--> statement-breakpoint
+CREATE UNIQUE INDEX `channel_messages_channel_message_id` ON `channel_messages` (`channel`,`message_id`);

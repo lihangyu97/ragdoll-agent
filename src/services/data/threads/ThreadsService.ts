@@ -21,11 +21,11 @@ export default class ThreadsService extends Service {
     super(ctx, 'threads')
   }
 
-  /** 确保 thread 存在（没有则创建）。冲突即忽略，sender_open_id 只在首次写入（会话发起者） */
-  ensureThread(threadId: string, chatType: string, chatId: string, senderOpenId: string | null) {
+  /** 确保 thread 存在（没有则创建）。冲突即忽略，sender_id 只在首次写入（会话发起者） */
+  ensureThread(threadId: string, chatType: string, chatId: string, senderId: string | null) {
     this.ctx.database.db
       .insert(agentThreads)
-      .values({ threadId, chatType, chatId, senderOpenId, status: THREAD_STATUS.ACTIVE })
+      .values({ threadId, chatType, chatId, senderId, status: THREAD_STATUS.ACTIVE })
       .onConflictDoNothing()
       .run()
   }
