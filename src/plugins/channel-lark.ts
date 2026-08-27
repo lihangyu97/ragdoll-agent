@@ -6,8 +6,8 @@ export default {
   inject: ['channel', 'larkAdapter'],
   apply(ctx: Context) {
     ctx.channel.register(ctx.larkAdapter)
-    ctx.effect(() => {
-      ctx.larkAdapter.start()
+    ctx.effect(async () => {
+      await ctx.larkAdapter.start()
       return () => {
         ctx.larkAdapter.stop()
       }

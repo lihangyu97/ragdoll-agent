@@ -18,9 +18,17 @@ export default class ChannelStoreService extends Service {
     super(ctx, 'channelStore')
   }
 
-  /** 写入一条渠道消息记录 */
-  insertMessage(record: ChannelMessageRecord) {
-    this.ctx.database.db.insert(channelMessages).values(record).run()
+  /**
+   * 写入一条渠道消息记录。UNIQUE(channel, message_id) 兜底 at-least-once 重推：
+   * 重复消息返回 false（调用方跳过整条入站管线）。
+   */
+  insertMessage(record: ChannelMessageRecord): boolean {
+    const result = this.ctx.database.db
+      .insert(channelMessages)
+      .values(record)
+      .onConflictDoNothing()
+      .run()
+    return result.changes > 0
   }
 
   /** 按 channel + userId 查用户名，找不到返回 null */

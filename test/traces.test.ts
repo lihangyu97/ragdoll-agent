@@ -58,7 +58,12 @@ test('updateTraceStatus CAS 匹配成功 → true 且状态变化', () => {
   const ok = ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
   assert.equal(ok, true)
   assert.equal(ctx.traces.getPendingTrace(), null) // 不再是 pending
-  assert.equal(ctx.traces.getLatestProcessingTrace('t1')?.status, TRACE_STATUS.PROCESSING)
+  const row = ctx.database.db
+    .select({ status: agentTraces.status })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, trace.id))
+    .get()
+  assert.equal(row?.status, TRACE_STATUS.PROCESSING)
 })
 
 test('updateTraceStatus CAS 不匹配 → false 且状态不变', () => {
@@ -85,19 +90,6 @@ test('失败路径：processing → failed', () => {
   assert.equal(getStatus(trace.id), TRACE_STATUS.FAILED)
 })
 
-test('getLatestProcessingTrace 返回 processing 状态的那条', () => {
-  seedTrace('t1', 'first')
-  seedTrace('t1', 'second')
-  const first = ctx.traces.getPendingTrace()!
-  ctx.traces.updateTraceStatus(first.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
-  const second = ctx.traces.getPendingTrace()!
-  ctx.traces.updateTraceStatus(second.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
-  const latest = ctx.traces.getLatestProcessingTrace('t1')!
-  // created_at 秒级精度，同秒插入无法区分先后，只断言返回的是 processing 记录
-  assert.equal(latest.status, TRACE_STATUS.PROCESSING)
-  assert.ok([first.id, second.id].includes(latest.id))
-})
-
 test('resetStaleProcessingTraces：超时（>10min）的 processing 重置回 pending', () => {
   seedTrace('t1', 'hello')
   const trace = ctx.traces.getPendingTrace()!
@@ -119,7 +111,12 @@ test('resetStaleProcessingTraces：新鲜的 processing 不重置（多实例安
   ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
   const reset = ctx.traces.resetStaleProcessingTraces()
   assert.equal(reset, 0)
-  assert.equal(ctx.traces.getLatestProcessingTrace('t1')?.id, trace.id) // 仍是 processing
+  const row = ctx.database.db
+    .select({ status: agentTraces.status })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, trace.id))
+    .get()
+  assert.equal(row?.status, TRACE_STATUS.PROCESSING) // 仍是 processing，未被误重置
 })
 
 test('FK：插入不存在的 thread_id 抛约束错误', () => {

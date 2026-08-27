@@ -2,7 +2,7 @@ import { Service, type Context } from 'cordis'
 import {
   TRACE_STATUS,
   type AgentTraceRecord,
-  type TraceStatus
+  type TraceStatusEvent
 } from '@/services/data/traces/TracesService'
 
 import logger from '@/utils/logger'
@@ -15,7 +15,7 @@ declare module 'cordis' {
   }
   interface Events {
     // 后续观察状态可能有用...
-    'trace/status': (threadId: string, status: TraceStatus) => void
+    'trace/status': (payload: TraceStatusEvent) => void
     // 规则层路由策略点（bail）：监听器返回 agentId 即命中（确定性规则，如群绑定/命令/关键词）；
     // 全部未命中则走 agentClient LLM 识别兜底
     'agent/resolve': (threadId: string, input: string) => string | void
@@ -80,7 +80,14 @@ export default class WorkerService extends Service {
         )
         if (!locked) continue
 
-        await this.process(trace)
+        try {
+          await this.process(trace)
+        } catch (err) {
+          // process 内部已兜住 agent.run 错误；这里兜外层路径（emit / replyIfNeeded 等）：
+          // 单条异常不中断整个队列，并把残留 processing 标记 failed 避免卡死
+          logger.error(`[worker] 单条 trace 处理异常（id=${trace.id}）: `, err)
+          this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
+        }
       }
     } catch (err) {
       logger.error('[worker] 轮询异常: ', err)
@@ -97,7 +104,7 @@ export default class WorkerService extends Service {
    * 4. 绑定 thread（一次性定终身）→ run → 出站回复。
    */
   private async process(trace: AgentTraceRecord) {
-    this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.PROCESSING)
+    this.ctx.emit('trace/status', { threadId: trace.threadId, status: TRACE_STATUS.PROCESSING })
 
     await threadContext.run(trace.threadId, async () => {
       logger.info('[worker] 开始处理')
@@ -106,12 +113,12 @@ export default class WorkerService extends Service {
         const answer = await this.ctx.agent.run(trace.inputText, trace.threadId, agentId)
 
         this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
-        this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.DONE)
+        this.ctx.emit('trace/status', { threadId: trace.threadId, status: TRACE_STATUS.DONE })
         logger.info(`[worker] agent run done (agent=${agentId})`)
         await this.replyIfNeeded(trace, answer)
       } catch (err) {
         this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
-        this.ctx.emit('trace/status', trace.threadId, TRACE_STATUS.FAILED)
+        this.ctx.emit('trace/status', { threadId: trace.threadId, status: TRACE_STATUS.FAILED })
         logger.error('[worker] agent run fail', err)
         await this.replyIfNeeded(trace, `Agent 处理失败：${stringify(err)}`)
       }

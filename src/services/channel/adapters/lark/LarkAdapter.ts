@@ -98,7 +98,12 @@ export default class LarkAdapter extends Service implements ChannelAdapter {
   private async handleReceiveV1Message(msg: LarkMessage): Promise<void> {
     const rawThreadId = resolveThreadId(msg)
     if (!rawThreadId) {
-      logger.error('无 threadId 无法确认场景', msg)
+      // 常见原因：群聊非话题线程（未开话题/未 @bot 的子线程消息），当前不支持，仅记日志避免"消息神秘消失"
+      logger.error(
+        `[lark] 消息无法定位会话 threadId，已忽略（chat_type=${msg.message.chat_type}` +
+          (msg.message.chat_type === 'group' ? '，群聊需要话题线程（thread_id）' : '') +
+          `）: message_id=${msg.message.message_id}`
+      )
       return
     }
 

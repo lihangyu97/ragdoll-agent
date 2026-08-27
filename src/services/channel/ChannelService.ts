@@ -2,14 +2,14 @@ import { Service, type Context } from 'cordis'
 import { z } from 'zod'
 import logger from '@/utils/logger'
 import { stringify } from '@/utils'
-import type { ChannelAdapter, InboundMessage, OutboundReply } from './types'
+import type { ChannelAdapter, InboundMessage, MessageReceivedEvent, OutboundReply } from './types'
 
 declare module 'cordis' {
   interface Context {
     channel: ChannelService
   }
   interface Events {
-    'message/received': (channel: string, threadId: string, text: string) => void
+    'message/received': (payload: MessageReceivedEvent) => void
   }
 }
 
@@ -46,9 +46,9 @@ export default class ChannelService extends Service {
     this.adapters.set(adapter.id, adapter)
   }
 
-  /** 统一入站管线：落库 → 建 thread → 入队 → 回执 → 广播 */
+  /** 统一入站管线：落库 → 建 thread → 入队 → 回执 → 广播（重复 message_id 整条跳过，幂等） */
   async dispatch(msg: InboundMessage): Promise<void> {
-    this.ctx.channelStore.insertMessage({
+    const inserted = this.ctx.channelStore.insertMessage({
       channel: msg.channel,
       messageId: msg.messageId,
       chatId: msg.chatId,
@@ -59,6 +59,10 @@ export default class ChannelService extends Service {
       text: msg.text,
       extra: msg.raw ? stringify(msg.raw) : null
     })
+    if (!inserted) {
+      logger.warn(`[channel] 重复消息已忽略（${msg.channel}/${msg.messageId}）`)
+      return
+    }
 
     this.ctx.threads.ensureThread(msg.threadId, msg.chatType, msg.chatId, msg.senderId ?? null)
     this.ctx.traces.insertTrace(msg.threadId, msg.messageId, msg.chatId, msg.text, msg.channel)
@@ -71,7 +75,11 @@ export default class ChannelService extends Service {
       })
     }
 
-    this.ctx.emit('message/received', msg.channel, msg.threadId, msg.text)
+    this.ctx.emit('message/received', {
+      channel: msg.channel,
+      threadId: msg.threadId,
+      text: msg.text
+    })
   }
 
   /** 出站回复：按 reply.channel 路由到对应 adapter；无 adapter 记日志并返回 false */

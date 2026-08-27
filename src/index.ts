@@ -68,7 +68,10 @@ app.plugin(worker)
 app.plugin(turnRecorder)
 app.plugin(output)
 
+let closing = false
 const close = async () => {
+  if (closing) process.exit(1) // 第二次信号：优雅退出被卡住时强制退出
+  closing = true
   const fibers = []
   for (const runtime of app.registry.values()) {
     for (const fiber of runtime.fibers) {
@@ -83,5 +86,5 @@ const close = async () => {
   process.exit(0)
 }
 
-process.once('SIGINT', close)
-process.once('SIGTERM', close)
+process.on('SIGINT', close)
+process.on('SIGTERM', close)

@@ -35,8 +35,8 @@ class MockAgentService extends Service {
     }
     if (MockAgentService.gate) await MockAgentService.gate
     MockAgentService.calls.push({ input, threadId, agentId })
-    this.ctx.emit('agent/input', threadId, input)
-    this.ctx.emit('agent/result', threadId, 'mock-node', { text: 'mock reply' })
+    this.ctx.emit('agent/input', { threadId, turnNo: 1, input })
+    this.ctx.emit('agent/result', { threadId, turnNo: 1, node: 'mock-node', text: 'mock reply' })
     return 'mock reply'
   }
 
@@ -98,7 +98,7 @@ test('worker 消费 pending trace → done，且广播 trace/status', async () =
   const traceId = seedTrace('t1', 'hello')
 
   const statuses: TraceStatus[] = []
-  ctx.on('trace/status', (_threadId, status) => statuses.push(status))
+  ctx.on('trace/status', ({ status }) => statuses.push(status))
 
   ctx.worker.start()
   await waitUntil(() => {
@@ -125,7 +125,7 @@ test('worker run 失败 → trace failed，且广播 trace/status', async () => 
   const traceId = seedTrace('t1', 'hello')
 
   const statuses: TraceStatus[] = []
-  ctx.on('trace/status', (_threadId, status) => statuses.push(status))
+  ctx.on('trace/status', ({ status }) => statuses.push(status))
 
   ctx.worker.start()
   await waitUntil(() => {

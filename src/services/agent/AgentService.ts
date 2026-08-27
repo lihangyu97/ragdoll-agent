@@ -15,20 +15,27 @@ import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { stringify } from '@/utils'
 import { threadContext } from '@/utils/context'
 import logger from '@/utils/logger'
-import type { AgentResultEvent, AgentToolCallEvent, AgentToolResultEvent } from './steps'
+import type {
+  AgentErrorEvent,
+  AgentInputEvent,
+  AgentResultEvent,
+  AgentTimeoutEvent,
+  AgentToolCallEvent,
+  AgentToolResultEvent
+} from './steps'
 
 declare module 'cordis' {
   interface Context {
     agent: AgentService
   }
   interface Events {
-    'agent/input': (threadId: string, input: string) => void
-    // 事件载荷为框架无关结构（steps.ts）；langchain 消息在 run 内部转换后再发出
-    'agent/tool-call': (threadId: string, node: string, step: AgentToolCallEvent) => void
-    'agent/tool-result': (threadId: string, node: string, step: AgentToolResultEvent) => void
-    'agent/result': (threadId: string, node: string, step: AgentResultEvent) => void
-    'agent/error': (threadId: string, error: string) => void
-    'agent/timeout': (threadId: string) => void
+    // 所有 agent 事件统一为单个 payload（steps.ts）：事件名即判别符，身份字段在 AgentEventBase
+    'agent/input': (payload: AgentInputEvent) => void
+    'agent/tool-call': (payload: AgentToolCallEvent) => void
+    'agent/tool-result': (payload: AgentToolResultEvent) => void
+    'agent/result': (payload: AgentResultEvent) => void
+    'agent/error': (payload: AgentErrorEvent) => void
+    'agent/timeout': (payload: AgentTimeoutEvent) => void
   }
 }
 
@@ -41,7 +48,7 @@ const IDENTIFY_SCHEMA = z.object({
 })
 
 export default class AgentService extends Service {
-  static inject = ['capability']
+  static inject = ['capability', 'turns']
 
   static Config = z.object({
     apiKey: z.string().min(1),
@@ -84,14 +91,16 @@ export default class AgentService extends Service {
 
     await threadContext.run(threadId, async () => {
       const controller = new AbortController()
+      // 轮次号在 run 入口算一次，同一轮内所有事件共用（含 error/timeout）
+      const turnNo = this.ctx.turns.nextTurnNo(threadId)
       const timer = setTimeout(() => {
         controller.abort()
-        this.ctx.emit('agent/timeout', threadId)
+        this.ctx.emit('agent/timeout', { threadId, turnNo })
       }, AGENT_RUN_TIMEOUT_MS)
 
       try {
         const agent = await this.ensureAgent(agentId)
-        this.ctx.emit('agent/input', threadId, input)
+        this.ctx.emit('agent/input', { threadId, turnNo, input })
 
         const stream = await agent.stream(
           { messages: [new HumanMessage(input)] },
@@ -112,7 +121,10 @@ export default class AgentService extends Service {
           for (const [node, update] of Object.entries(step)) {
             for (const msg of update.messages ?? []) {
               if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
-                this.ctx.emit('agent/tool-call', threadId, node, {
+                this.ctx.emit('agent/tool-call', {
+                  threadId,
+                  turnNo,
+                  node,
                   toolCalls: msg.tool_calls.map(call => ({
                     id: call.id ?? '',
                     name: call.name,
@@ -120,13 +132,16 @@ export default class AgentService extends Service {
                   }))
                 })
               } else if (ToolMessage.isInstance(msg)) {
-                this.ctx.emit('agent/tool-result', threadId, node, {
+                this.ctx.emit('agent/tool-result', {
+                  threadId,
+                  turnNo,
+                  node,
                   toolCallId: msg.tool_call_id,
                   text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
                 })
               } else {
                 const text = typeof msg.content === 'string' ? msg.content : ''
-                this.ctx.emit('agent/result', threadId, node, { text })
+                this.ctx.emit('agent/result', { threadId, turnNo, node, text })
                 if (text) {
                   answer = text // 最后一次非工具消息即最终答案
                 }
@@ -135,7 +150,7 @@ export default class AgentService extends Service {
           }
         }
       } catch (err) {
-        this.ctx.emit('agent/error', threadId, stringify(err))
+        this.ctx.emit('agent/error', { threadId, turnNo, error: stringify(err) })
         throw err
       } finally {
         clearTimeout(timer)

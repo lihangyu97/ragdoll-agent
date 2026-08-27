@@ -28,20 +28,25 @@ export type ThreadStatus = (typeof THREAD_STATUS)[keyof typeof THREAD_STATUS]
 /* ===== 表定义（唯一事实来源；drizzle-kit generate 生成迁移） ===== */
 
 /** 渠道消息（通用，所有渠道共用；渠道专属字段进 extra JSON） */
-export const channelMessages = sqliteTable('channel_messages', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  channel: text('channel').notNull(),
-  messageId: text('message_id').notNull(),
-  chatId: text('chat_id').notNull(),
-  chatType: text('chat_type').notNull(),
-  threadId: text('thread_id'),
-  senderId: text('sender_id'),
-  senderName: text('sender_name'),
-  text: text('text'),
-  /** 渠道专属字段 JSON（如 lark 的 event_type/app_id），仅 debug 用 */
-  extra: text('extra'),
-  createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`)
-})
+export const channelMessages = sqliteTable(
+  'channel_messages',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    channel: text('channel').notNull(),
+    messageId: text('message_id').notNull(),
+    chatId: text('chat_id').notNull(),
+    chatType: text('chat_type').notNull(),
+    threadId: text('thread_id'),
+    senderId: text('sender_id'),
+    senderName: text('sender_name'),
+    text: text('text'),
+    /** 渠道专属字段 JSON（如 lark 的 event_type/app_id），仅 debug 用 */
+    extra: text('extra'),
+    createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`)
+  },
+  // 平台事件多为 at-least-once（断线重连会重推）：(channel, message_id) 唯一，dispatch 幂等去重
+  t => [uniqueIndex('channel_messages_channel_message_id').on(t.channel, t.messageId)]
+)
 
 /** 渠道用户缓存（用户名等展示信息，按 channel + userId 唯一） */
 export const channelUsers = sqliteTable(
@@ -57,18 +62,27 @@ export const channelUsers = sqliteTable(
   t => [uniqueIndex('channel_users_channel_user_id').on(t.channel, t.userId)]
 )
 
-export const agentTurns = sqliteTable('agent_turns', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  threadId: text('thread_id').notNull(),
-  turnNo: integer('turn_no').notNull(),
-  hookType: text('hook_type').notNull(),
-  node: text('node'),
-  toolCallId: text('tool_call_id'),
-  toolCalls: text('tool_calls'),
-  content: text('content'),
-  toolsResult: text('tools_result'),
-  createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`)
-})
+export const agentTurns = sqliteTable(
+  'agent_turns',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    threadId: text('thread_id').notNull(),
+    turnNo: integer('turn_no').notNull(),
+    hookType: text('hook_type').notNull(),
+    node: text('node'),
+    toolCallId: text('tool_call_id'),
+    toolCalls: text('tool_calls'),
+    content: text('content'),
+    toolsResult: text('tools_result'),
+    createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`)
+  },
+  // 每 thread 每轮只允许一条 INPUT（turnNo 并发分配竞态的兜底：重复开轮直接冲突报错）
+  t => [
+    uniqueIndex('agent_turns_thread_turn_input')
+      .on(t.threadId, t.turnNo)
+      .where(sql`hook_type = 'INPUT'`)
+  ]
+)
 
 export const agentThreads = sqliteTable('agent_threads', {
   threadId: text('thread_id').primaryKey(),

@@ -1,11 +1,17 @@
 import { Service, type Context } from 'cordis'
-import { and, asc, desc, eq, lt, sql } from 'drizzle-orm'
+import { and, asc, eq, lt, sql } from 'drizzle-orm'
 import { agentTraces, TRACE_STATUS, type TraceStatus } from '@/services/data/database/schema'
 
 export { TRACE_STATUS } from '@/services/data/database/schema'
 export type { TraceStatus } from '@/services/data/database/schema'
 
 export type AgentTraceRecord = typeof agentTraces.$inferSelect
+
+/** trace/status 事件载荷：worker 状态流转广播 */
+export interface TraceStatusEvent {
+  threadId: string
+  status: TraceStatus
+}
 
 /** processing 超过该时长视为"无主"（进程崩溃残留）：worker 启动时回收重置回 pending。
  *  必须大于单次 agent 执行上限（AGENT_RUN_TIMEOUT_MS = 5min），否则会把正在跑的 trace 误判为残留。 */
@@ -51,20 +57,6 @@ export default class TracesService extends Service {
       .from(agentTraces)
       .where(eq(agentTraces.status, TRACE_STATUS.PENDING))
       .orderBy(asc(agentTraces.createdAt))
-      .limit(1)
-      .get()
-    return row ?? null
-  }
-
-  /** 取某 thread 最新一条 processing 的 trace（AGENT_RESULT 触发时 worker 尚未标记 done） */
-  getLatestProcessingTrace(threadId: string): AgentTraceRecord | null {
-    const row = this.ctx.database.db
-      .select()
-      .from(agentTraces)
-      .where(
-        and(eq(agentTraces.threadId, threadId), eq(agentTraces.status, TRACE_STATUS.PROCESSING))
-      )
-      .orderBy(desc(agentTraces.createdAt))
       .limit(1)
       .get()
     return row ?? null

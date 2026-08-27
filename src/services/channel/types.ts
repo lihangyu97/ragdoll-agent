@@ -29,6 +29,13 @@ export interface OutboundReply {
   text: string
 }
 
+/** message/received 事件载荷：dispatch 完成后广播（观察/审计用） */
+export interface MessageReceivedEvent {
+  channel: string
+  threadId: string
+  text: string
+}
+
 /** 渠道适配器接口：完整实现即可插拔 */
 export interface ChannelAdapter {
   readonly id: string

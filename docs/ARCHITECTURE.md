@@ -79,41 +79,46 @@ interface InboundMessage {
 ```
 
 - **入站**：adapter 监听平台事件 → 归一化成 `InboundMessage` → `ctx.channel.dispatch(msg)`。
-  `dispatch` 是**统一入站管线**：落库 `channel_messages` → `ensureThread` → `insertTrace`（带 channel）→ 回执（"🤔 正在思考中…"）→ 广播 `message/received`。
+  `dispatch` 是**统一入站管线**：落库 `channel_messages`（`UNIQUE(channel, message_id)` 幂等去重，
+  平台 at-least-once 重推的重复事件整体跳过）→ `ensureThread` → `insertTrace`（带 channel）→ 回执（"🤔 正在思考中…"）→ 广播 `message/received`。
 - **出站**：worker 完成路径经 `ctx.channel.send({ channel, messageId, text })` 按 `channel` 路由回对应 adapter。
 - **装配**：每渠道一个薄插件（`src/plugins/channel-lark.ts` 同构），`register` + `ctx.effect` 管理 start/stop 生命周期；`src/index.ts` / `cordis.yml` 只挂插件（不手写 register，保证生命周期、Config 校验、DI 都走 cordis）。
+- **注意**：lark 群聊只有话题线程（`thread_id`）的消息才会处理，非话题群消息无法定位会话，仅记日志忽略。
 
 ### 3.2 agent/* 事件：框架无关载荷（`src/services/agent/steps.ts`）
 
 `AgentService` 对外只有 `run(input, threadId, agentId)` 与 `identify(input)` 两个签名（已中立）；langchain 消息在 run 内部转换成中立载荷再发事件，**全仓库只有 `src/services/agent/` 内部 + `src/plugins/weather/`（demo 工具）能 import `@langchain/*`**：
 
-| 事件                | 载荷                                              | 订阅方                |
+| 事件                | 载荷（统一 payload，身份字段在 `AgentEventBase`） | 订阅方                |
 | ------------------- | ------------------------------------------------- | --------------------- |
-| `agent/input`       | `(threadId, input)`                               | turn-recorder、output |
-| `agent/tool-call`   | `(threadId, node, { toolCalls: ToolCallInfo[] })` | turn-recorder、output |
-| `agent/tool-result` | `(threadId, node, { toolCallId, text })`          | turn-recorder、output |
-| `agent/result`      | `(threadId, node, { text })`                      | turn-recorder、output |
-| `agent/error`       | `(threadId, error)`                               | output                |
-| `agent/timeout`     | `(threadId)`                                      | 预留                  |
+| `agent/input`       | `{ threadId, turnNo, input }`                     | turn-recorder、output |
+| `agent/tool-call`   | `{ threadId, turnNo, node, toolCalls }`           | turn-recorder、output |
+| `agent/tool-result` | `{ threadId, turnNo, node, toolCallId, text }`    | turn-recorder、output |
+| `agent/result`      | `{ threadId, turnNo, node, text }`                | turn-recorder、output |
+| `agent/error`       | `{ threadId, turnNo, error }`                     | turn-recorder、output |
+| `agent/timeout`     | `{ threadId, turnNo }`                            | turn-recorder、output |
+
+> 事件载荷全部 payload 化（事件名即判别符，增删字段对订阅方是兼容变更）；`turnNo` 由
+> `AgentService.run()` 入口计算一次并随每个事件下发，观测方无需推断轮次，并发/交错线程不丢记录。
 
 ### 3.3 数据表（`src/services/data/database/schema.ts`）
 
-| 表                 | 用途             | 备注                                                                               |
-| ------------------ | ---------------- | ---------------------------------------------------------------------------------- |
-| `channel_messages` | 渠道消息（通用） | `channel` 字段区分渠道；渠道专属字段进 `extra` JSON                                |
-| `channel_users`    | 渠道用户缓存     | `UNIQUE(channel, user_id)`；lark 的 open_id → 用户名                               |
-| `agent_threads`    | 会话线程         | `thread_id` PK（带渠道前缀）；`agent_id` = 绑定的 agent definition（一次性定终身） |
-| `agent_traces`     | 消息队列         | pending → processing → done/failed；`channel` 列是出站路由依据；worker 抢锁 CAS    |
-| `agent_turns`      | 每轮执行轨迹     | turn-recorder 写入（INPUT / TOOL_CALL / TOOL_RESULT / AGENT_RESULT）               |
-| `logger`           | 日志落库         | `@/utils/logger` 直接写，不经 database Service（写失败不中断业务）                 |
+| 表                 | 用途             | 备注                                                                                                                                                           |
+| ------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `channel_messages` | 渠道消息（通用） | `UNIQUE(channel, message_id)`（dispatch 幂等去重）；渠道专属字段进 `extra` JSON                                                                                |
+| `channel_users`    | 渠道用户缓存     | `UNIQUE(channel, user_id)`；lark 的 open_id → 用户名                                                                                                           |
+| `agent_threads`    | 会话线程         | `thread_id` PK（带渠道前缀）；`agent_id` = 绑定的 agent definition（一次性定终身）                                                                             |
+| `agent_traces`     | 消息队列         | pending → processing → done/failed；`channel` 列是出站路由依据；worker 抢锁 CAS                                                                                |
+| `agent_turns`      | 每轮执行轨迹     | turn-recorder 写入（INPUT / TOOL_CALL / TOOL_RESULT / AGENT_RESULT / ERROR / TIMEOUT）；`UNIQUE(thread_id, turn_no) WHERE hook_type='INPUT'`（防并发重复开轮） |
+| `logger`           | 日志落库         | `@/utils/logger` 直接写，不经 database Service（写失败不中断业务）                                                                                             |
 
 ## 4. 事件协议一览
 
 | 事件                 | 模式        | 用途                                                                   |
 | -------------------- | ----------- | ---------------------------------------------------------------------- |
 | `agent/*`（六个）    | `emit`      | 执行观测（载荷框架无关，见 §3.2）                                      |
-| `message/received`   | `emit`      | channel dispatch 后广播 `(channel, threadId, text)`，观察/审计用       |
-| `trace/status`       | `emit`      | worker 状态流转广播                                                    |
+| `message/received`   | `emit`      | channel dispatch 后广播 `{ channel, threadId, text }`，观察/审计用     |
+| `trace/status`       | `emit`      | worker 状态流转广播 `{ threadId, status }`                             |
 | `agent/resolve`      | `bail`      | 规则层路由：监听器返回 agentId 即命中（确定性规则），未命中走 LLM 识别 |
 | `agent/prompt-build` | `waterfall` | 组装期改写 systemPrompt（守卫、插件注入）                              |
 
@@ -157,8 +162,7 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 ### 待定
 
 - [ ] **worker 多实例：心跳租约回收**（方案已定未实施）：`agent_traces` 加 `heartbeat_at`，处理期间每 30s 刷新；90s 未更新判死；回收从"仅启动时"升级为周期 sweep（多实例安全）；恢复语义 = 至少一次（工具副作用需幂等）。实施时机：上 pm2 多实例时，与部署一起做。现实现（启动时 + 10min 静态阈值回收）单实例够用。
-- [ ] **数据库索引**（数据量上来再加）：`agent_traces(status, created_at)`、`agent_traces(thread_id)`、`agent_turns(thread_id, turn_no)`
-- [ ] 超时报错函数（waterfall 构建 systemPrompt 已在 capability 落地，此条可清理）
+- [ ] **数据库索引**（数据量上来再加）：`agent_traces(status, created_at)`、`agent_traces(thread_id)`（`agent_turns(thread_id, turn_no)` 已做部分索引：INPUT 唯一）
 
 ## 7. 约定与坑
 

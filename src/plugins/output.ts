@@ -4,24 +4,24 @@ import type { Context } from 'cordis'
 export default {
   name: 'console-demo',
   apply(ctx: Context) {
-    ctx.on('agent/input', (threadId, input) => {
-      console.log(`[input] thread=${threadId}: ${input}`)
+    ctx.on('agent/input', ({ threadId, turnNo, input }) => {
+      console.log(`[input] thread=${threadId} turn=${turnNo}: ${input}`)
     })
 
-    ctx.on('agent/tool-call', (_threadId, node, step) => {
-      console.log(`[${node}] toolCalls: ${JSON.stringify(step.toolCalls)}`)
+    ctx.on('agent/tool-call', ({ node, turnNo, toolCalls }) => {
+      console.log(`[${node}] turn=${turnNo} toolCalls: ${JSON.stringify(toolCalls)}`)
     })
 
-    ctx.on('agent/tool-result', (_threadId, node, step) => {
-      console.log(`[${node}] tool(${step.toolCallId}): ${step.text}`)
+    ctx.on('agent/tool-result', ({ node, turnNo, toolCallId, text }) => {
+      console.log(`[${node}] turn=${turnNo} tool(${toolCallId}): ${text}`)
     })
 
-    ctx.on('agent/result', (_threadId, node, step) => {
-      console.log(`[${node}] ${step.text}`)
+    ctx.on('agent/result', ({ node, turnNo, text }) => {
+      console.log(`[${node}] turn=${turnNo} ${text}`)
     })
 
-    ctx.on('agent/error', (threadId, error) => {
-      console.log(`[error] thread=${threadId}: ${error}`)
+    ctx.on('agent/error', ({ threadId, turnNo, error }) => {
+      console.log(`[error] thread=${threadId} turn=${turnNo}: ${error}`)
     })
   }
 }

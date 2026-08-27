@@ -146,3 +146,14 @@ test('run_command：白名单内可执行；白名单外/链式注入被拒', as
   const chained = await tool('run_command').invoke({ command: 'echo hi && rm -rf /' })
   assert.ok(chained.includes('已拒绝'))
 })
+
+test('run_command：白名单前缀带空格边界，前缀绕过被拒', async t => {
+  const root = fixture()
+  const { tool } = await setup({ root, cwd: root, commands: ['echo'] })
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+
+  assert.ok((await tool('run_command').invoke({ command: 'echo' })).includes('(无输出)'))
+  // 旧实现 cmd.startsWith(prefix) 会放行 echo-evil；现在要求 "echo " 空格边界
+  const bypass = await tool('run_command').invoke({ command: 'echo-evil rm -rf /' })
+  assert.ok(bypass.includes('不在白名单'))
+})

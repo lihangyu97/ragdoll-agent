@@ -31,6 +31,11 @@ export default class TurnsService extends Service {
     return row?.max ?? 0
   }
 
+  /** 某 thread 的下一轮次号：当前最大轮次 + 1（无记录从 1 开始）。由 AgentService 在 input 时调用一次 */
+  nextTurnNo(threadId: string): number {
+    return this.getMaxTurnNo(threadId) + 1
+  }
+
   /** 写入一行 turn 记录 */
   insertTurn(record: InsertTurnParams) {
     this.ctx.database.db.insert(agentTurns).values(record).run()

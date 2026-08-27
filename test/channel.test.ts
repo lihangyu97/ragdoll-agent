@@ -41,7 +41,9 @@ beforeEach(() => {
 
 test('dispatch：落库 channel_messages + 建 thread + 入队（带 channel）+ 回执 + 广播', async () => {
   const received: string[][] = []
-  ctx.on('message/received', (channel, threadId, text) => received.push([channel, threadId, text]))
+  ctx.on('message/received', ({ channel, threadId, text }) =>
+    received.push([channel, threadId, text])
+  )
 
   await ctx.channel.dispatch({
     channel: 'test',
@@ -76,6 +78,27 @@ test('dispatch：落库 channel_messages + 建 thread + 入队（带 channel）+
 
   // message/received 广播
   assert.deepEqual(received, [['test', 'test:p2p:123', 'hello']])
+})
+
+test('dispatch：重复 message_id 幂等跳过（不重复落库/入队/回执）', async () => {
+  const first = {
+    channel: 'test',
+    threadId: 'test:p2p:123',
+    chatId: '123',
+    chatType: 'p2p',
+    messageId: 'm-1',
+    text: 'hello'
+  }
+  await ctx.channel.dispatch(first)
+  MockAdapter.sends = []
+  // at-least-once 重推：同 channel + message_id 的事件整体跳过
+  await ctx.channel.dispatch({ ...first, text: 'hello again' })
+
+  const msgs = ctx.database.db.select().from(channelMessages).all()
+  assert.equal(msgs.length, 1)
+  assert.equal(msgs[0]?.text, 'hello') // 首次内容保留
+  assert.equal(ctx.database.db.select().from(agentTraces).all().length, 1) // 不重复入队
+  assert.deepEqual(MockAdapter.sends, []) // 不重复回执
 })
 
 test('send 路由到对应 adapter；未知 channel 返回 false 不抛错', async () => {
