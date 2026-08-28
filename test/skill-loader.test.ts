@@ -166,3 +166,65 @@ test('插件级：文件技能覆盖代码注册的同名技能', async t => {
   const ref = await loadSkill.invoke({ name: 'demo-skill', resource: 'references/REFERENCE.md' })
   assert.ok(ref.includes('参考文档'))
 })
+
+test('run_skill_script：默认关闭时不注入工具', async () => {
+  const ctx = new Context()
+  await ctx.plugin(DatabaseService, { dbPath: ':memory:' })
+  await ctx.plugin(CapabilityService) // 未开 enableSkillScripts
+  const spec = await ctx.capability.assemble()
+  assert.equal(
+    spec.tools.some(t => t.name === 'run_skill_script'),
+    false
+  )
+})
+
+test('run_skill_script：执行技能 scripts 脚本（路径白名单 + 解释器白名单）', async t => {
+  const root = makeRoot({
+    'demo-skill/SKILL.md': GOOD_SKILL_MD,
+    'demo-skill/scripts/say.sh': '#!/bin/sh\necho hello-from-script',
+    'demo-skill/scripts/bad.rb': 'puts "hi"'
+  })
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+
+  const ctx = new Context()
+  await ctx.plugin(DatabaseService, { dbPath: ':memory:' })
+  await ctx.plugin(CapabilityService, { enableSkillScripts: true })
+  await ctx.plugin(skillLoader, { skillsRoot: root })
+
+  const spec = await ctx.capability.assemble({ id: 'x', basePrompt: 'p', skills: ['demo-skill'] })
+  const run = spec.tools.find(t => t.name === 'run_skill_script')!
+  assert.ok(run, '开关开启时应注入 run_skill_script')
+
+  // 正常执行（bash，经 skill-loader 自动填充的 root）
+  const ok = await run.invoke({ skill: 'demo-skill', script: 'scripts/say.sh' })
+  assert.ok(ok.includes('hello-from-script'))
+
+  // 脚本不在 scripts 索引（路径逃逸）→ 拒绝
+  const escape = await run.invoke({ skill: 'demo-skill', script: 'scripts/../SKILL.md' })
+  assert.ok(escape.includes('不可执行'))
+  const outside = await run.invoke({ skill: 'demo-skill', script: 'references/REFERENCE.md' })
+  assert.ok(outside.includes('不可执行'))
+
+  // 不支持的扩展名 → 拒绝
+  const badExt = await run.invoke({ skill: 'demo-skill', script: 'scripts/bad.rb' })
+  assert.ok(badExt.includes('不支持脚本类型'))
+
+  // 技能不存在 → 可恢复提示
+  const noSkill = await run.invoke({ skill: 'nope', script: 'scripts/say.sh' })
+  assert.ok(noSkill.includes('未找到技能：nope'))
+})
+
+test('文件技能自动进 catalog：definition 无需声明 skills 即可被发现', async t => {
+  const root = makeRoot({ 'demo-skill/SKILL.md': GOOD_SKILL_MD })
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+
+  const ctx = new Context()
+  await ctx.plugin(DatabaseService, { dbPath: ':memory:' })
+  await ctx.plugin(CapabilityService)
+  await ctx.plugin(skillLoader, { skillsRoot: root })
+
+  // 定义不声明 skills：catalog 注册表驱动，文件技能自动列出 + load_skill 可用
+  const spec = await ctx.capability.assemble({ id: 'x', basePrompt: 'p' })
+  assert.ok(spec.systemPrompt.includes('- demo-skill：处理 demo 任务的技能。'))
+  assert.ok(spec.tools.some(t => t.name === 'load_skill'))
+})

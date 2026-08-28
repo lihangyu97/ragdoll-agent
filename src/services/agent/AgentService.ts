@@ -193,6 +193,10 @@ export default class AgentService extends Service {
     const entry = this.runtimes.get(agentId)
     if (!entry || entry.version !== version) {
       const spec = await this.ctx.capability.assemble(agentId)
+      // 打一条构建日志便于检查最终生效的 systemPrompt（每个 agent 每版本一次，非每轮）
+      logger.info(
+        `[agent] 构建运行时 systemPrompt（agent=${agentId} version=${version}）:\n${spec.systemPrompt}`
+      )
       this.runtimes.set(agentId, {
         version,
         agent: createAgent({

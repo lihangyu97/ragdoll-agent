@@ -1,6 +1,8 @@
 import { Service, type Context } from 'cordis'
 import { z } from 'zod'
 import { tool, type ClientTool } from '@langchain/core/tools'
+import { execFile } from 'node:child_process'
+import { extname, join } from 'node:path'
 import { createSystemTools, type SystemToolsOptions } from './systemTools'
 
 declare module 'cordis' {
@@ -40,8 +42,10 @@ export interface Skill {
   compatibility?: string
   /** 任意键值元数据（作者/版本等，来源追踪/调试用） */
   metadata?: Record<string, string>
-  /** scripts/ 下可执行文件路径索引（内容同时进 resources 供读取；执行能力 P2 再上） */
+  /** scripts/ 下可执行文件路径索引（内容同时进 resources 供读取；run_skill_script 按此白名单执行） */
   scripts?: string[]
+  /** 技能目录绝对路径（文件技能由 skill-loader 填充；run_skill_script 执行 scripts 用，宿主侧不渲染） */
+  root?: string
 }
 
 /** 声明式组装规格：声明"要什么能力"，assemble 时拼成 AgentSpec 快照 */
@@ -69,6 +73,25 @@ const DEFAULT_DEFINITION: AgentDefinition = {
   skillMode: 'catalog'
 }
 
+/** run_skill_script 可执行脚本的解释器白名单（按扩展名） */
+const SCRIPT_INTERPRETERS: Record<string, string> = {
+  '.sh': 'bash',
+  '.bash': 'bash',
+  '.py': 'python3',
+  '.js': 'node',
+  '.mjs': 'node',
+  '.cjs': 'node'
+}
+
+/** 脚本输出截断长度（控制 token 占用） */
+const MAX_OUTPUT_CHARS = 4000
+
+/** capability 构造参数（cordis 按 Config 校验后传入；systemTools 选项 + 技能脚本开关） */
+interface CapabilityOptions extends SystemToolsOptions {
+  /** 是否启用 run_skill_script（执行技能 scripts/ 脚本；默认关） */
+  enableSkillScripts?: boolean
+}
+
 /**
  * capability Service：agent 能力注册表 + 组装器（数据面）。
  * 注册 = 具名能力进注册表（version +1）；组装 = 按 AgentDefinition 产出 AgentSpec 快照。
@@ -86,7 +109,9 @@ export default class CapabilityService extends Service {
       /** run_command 命令白名单前缀（默认空 = 禁用 run_command） */
       commands: z.array(z.string()).optional(),
       /** run_command 超时（毫秒，默认 30s） */
-      timeoutMs: z.number().optional()
+      timeoutMs: z.number().optional(),
+      /** 是否启用 run_skill_script（执行技能 scripts/ 脚本；默认 false，构造器兜底） */
+      enableSkillScripts: z.boolean().optional()
     })
     .default({})
 
@@ -95,14 +120,18 @@ export default class CapabilityService extends Service {
   private readonly skills = new Map<string, Skill>()
   private readonly definitions = new Map<string, AgentDefinition>()
   private readonly systemTools = new Map<string, ClientTool>()
+  private readonly enableSkillScripts: boolean
+  private readonly timeoutMs: number
   private _version = 0
 
-  constructor(ctx: Context, options: SystemToolsOptions = {}) {
+  constructor(ctx: Context, options: CapabilityOptions = {}) {
     super(ctx, 'capability')
     // 构造器参数形状与 Config 一致（cordis 已按 Config 校验后传入），未配置的项在 createSystemTools 里落默认值
     for (const t of createSystemTools(options)) {
       this.systemTools.set(t.name, t)
     }
+    this.enableSkillScripts = options.enableSkillScripts ?? false
+    this.timeoutMs = options.timeoutMs ?? 30_000
     this.definitions.set(DEFAULT_DEFINITION.id, DEFAULT_DEFINITION)
   }
 
@@ -220,21 +249,21 @@ export default class CapabilityService extends Service {
       parts.push(this.getPrompt(name))
     }
 
-    if (def.skills?.length) {
-      if (def.skillMode === 'full') {
-        for (const name of def.skills) {
-          const skill = this.getSkill(name)
-          parts.push(`## 技能：${skill.name}\n\n${skill.instructions}`)
-        }
-      } else {
-        const lines = ['## 可用技能\n\n需要时调用 load_skill(name) 加载技能详细说明：']
-        for (const name of def.skills) {
-          const skill = this.getSkill(name)
-          const trigger = skill.trigger ? `（触发：${skill.trigger}）` : ''
-          lines.push(`- ${skill.name}：${skill.description}${trigger}`)
-        }
-        parts.push(lines.join('\n'))
+    if (def.skillMode === 'full') {
+      // full 模式保持 opt-in：只把 def.skills 显式声明的技能 instructions 编译进 prompt
+      for (const name of def.skills ?? []) {
+        const skill = this.getSkill(name)
+        parts.push(`## 技能：${skill.name}\n\n${skill.instructions}`)
       }
+    } else if (this.skills.size > 0) {
+      // catalog 模式注册表驱动：列出全部已注册技能（代码注册 + 文件技能），
+      // 往 skills/ 丢一个技能即对所有 catalog 模式的 agent 可发现（load_skill 同源）
+      const lines = ['## 可用技能\n\n需要时调用 load_skill(name) 加载技能详细说明：']
+      for (const skill of this.skills.values()) {
+        const trigger = skill.trigger ? `（触发：${skill.trigger}）` : ''
+        lines.push(`- ${skill.name}：${skill.description}${trigger}`)
+      }
+      parts.push(lines.join('\n'))
     }
 
     const built = parts.join('\n\n')
@@ -262,9 +291,14 @@ export default class CapabilityService extends Service {
       }
     }
 
-    // catalog 模式：注入 load_skill 懒加载工具
-    if ((def.skillMode ?? 'catalog') === 'catalog' && def.skills?.length) {
+    // catalog 模式：注册表有技能即注入 load_skill（与目录行同源，文件技能无需 definition 引用）
+    if ((def.skillMode ?? 'catalog') === 'catalog' && this.skills.size > 0) {
       add(this.createLoadSkillTool())
+    }
+
+    // 技能脚本执行（显式开关，默认关）
+    if (this.enableSkillScripts) {
+      add(this.createRunSkillScriptTool())
     }
 
     return tools
@@ -326,6 +360,71 @@ export default class CapabilityService extends Service {
   /** 技能可加载文件索引（references/ assets/ scripts/ 下文本文件；scripts 可读暂不可执行） */
   private skillFileIndex(skill: Skill): string[] {
     return Object.keys(skill.resources ?? {})
+  }
+
+  private createRunSkillScriptTool(): ClientTool {
+    return tool(
+      async ({ skill, script }: { skill: string; script: string }) =>
+        this.runSkillScript(skill, script),
+      {
+        name: 'run_skill_script',
+        description:
+          '执行技能 scripts/ 目录下的脚本（技能名 + scripts/ 下相对路径，从 load_skill 返回的文件索引中选取）。' +
+          '仅限该技能目录内的脚本，解释器白名单：bash/sh、python3、node，有超时限制。',
+        schema: z.object({
+          skill: z.string().describe('技能名（从系统提示的"可用技能"目录中选取）'),
+          script: z.string().describe('技能 scripts/ 下脚本的相对路径，如 scripts/summarize.sh')
+        })
+      }
+    )
+  }
+
+  /**
+   * run_skill_script 实现：仅执行技能 scripts/ 白名单索引内的脚本。
+   * 路径锁定（索引即白名单）+ 解释器白名单 + 超时 + 输出截断；
+   * 与 run_command 相同，只是演示级护栏，真隔离需 OS 沙箱/容器。
+   */
+  private async runSkillScript(skillName: string, script: string): Promise<string> {
+    const skill = this.skills.get(skillName)
+    if (!skill) {
+      return `未找到技能：${skillName}。可用技能：${[...this.skills.keys()].join('、') || '无'}。`
+    }
+    if (!skill.root || !skill.scripts?.includes(script)) {
+      return `技能 ${skillName} 不可执行：${script}。可执行文件（scripts/ 下）：${
+        skill.scripts?.join('、') || '无'
+      }。`
+    }
+    const interpreter = SCRIPT_INTERPRETERS[extname(script)]
+    if (!interpreter) {
+      return `不支持脚本类型：${script}。支持：.sh/.bash（bash）、.py（python3）、.js/.mjs/.cjs（node）。`
+    }
+
+    try {
+      const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>(
+        (resolveExec, rejectExec) => {
+          // execFile 不走 shell，参数数组传递，无命令注入面
+          execFile(
+            interpreter,
+            [join(skill.root!, script)],
+            { cwd: skill.root!, timeout: this.timeoutMs, maxBuffer: 1_000_000 },
+            (error, stdout, stderr) => {
+              if (error) rejectExec(Object.assign(error, { stdout, stderr }))
+              else resolveExec({ stdout, stderr })
+            }
+          )
+        }
+      )
+      const out = `${stdout}${stderr}`.trim() || '(无输出)'
+      return out.length > MAX_OUTPUT_CHARS
+        ? `${out.slice(0, MAX_OUTPUT_CHARS)}\n…[输出已截断]`
+        : out
+    } catch (err) {
+      const e = err as Error & { stdout?: string; stderr?: string; killed?: boolean }
+      const detail = `${e.stdout ?? ''}${e.stderr ?? ''}`.trim() || e.message
+      return `[skill-script] 执行失败: ${detail.slice(0, MAX_OUTPUT_CHARS)}${
+        e.killed ? '（超时被终止）' : ''
+      }`
+    }
   }
 
   private assertUnique(map: Map<string, unknown>, name: string, kind: string) {

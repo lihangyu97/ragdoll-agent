@@ -30,6 +30,7 @@
   config:
     root: !!js process.env.SYSTEM_TOOLS_ROOT ?? 'data/workspace'
     commands: !!js (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean)
+    enableSkillScripts: !!js process.env.ENABLE_SKILL_SCRIPTS === 'true'
 
 - id: agent
   name: ./src/services/agent/AgentService.ts

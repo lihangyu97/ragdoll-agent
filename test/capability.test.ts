@@ -147,6 +147,22 @@ test('personas：具名 prompt 段按顺序拼接；未知段组装抛错', asyn
   await assert.rejects(() => ctx.capability.assemble(), /prompt 不存在: nope/)
 })
 
+test('catalog 注册表驱动：definition 未声明 skills 也列出全部已注册技能 + load_skill；full 仍 opt-in', async () => {
+  const ctx = await setup()
+  ctx.capability.registerSkill({ name: 's1', description: '技能一', instructions: 'i1' })
+  ctx.capability.registerDefinition({ id: 'bare', basePrompt: 'bare base' }) // 不声明 skills
+
+  // catalog 默认：列出全部技能，load_skill 可用（文件技能丢进注册表即可被发现）
+  const spec = await ctx.capability.assemble('bare')
+  assert.ok(spec.systemPrompt.includes('- s1：技能一'))
+  assert.ok(spec.tools.some(t => t.name === 'load_skill'))
+
+  // full 模式保持 opt-in：不声明 skills 就不注入 instructions，也没有 load_skill
+  ctx.capability.registerDefinition({ id: 'bare-full', basePrompt: 'p', skillMode: 'full' })
+  const specFull = await ctx.capability.assemble('bare-full')
+  assert.ok(!specFull.systemPrompt.includes('技能一'))
+  assert.ok(!specFull.tools.some(t => t.name === 'load_skill'))
+})
 test('def.tools 直挂 + skill.tools 引用去重，catalog 仍带 load_skill', async () => {
   const ctx = await setup()
   ctx.capability.registerTool(fakeTool('t1'))

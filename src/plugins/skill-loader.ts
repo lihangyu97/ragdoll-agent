@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { z } from 'zod'
 import type { Context } from 'cordis'
@@ -13,7 +13,7 @@ import logger from '@/utils/logger'
  * 标准格式与内部 Skill 的映射：
  * - name / description / SKILL.md 正文 → Skill.name / description / instructions
  * - references/ + assets/ 文本文件 → Skill.resources（key = 相对路径）
- * - scripts/ 文件 → Skill.scripts（仅索引路径，执行能力后续再加）
+ * - scripts/ 文件 → Skill.scripts（执行索引，run_skill_script 按此白名单执行）
  * - license / compatibility / metadata → Skill 宿主侧字段（存而不渲染，不进 prompt）
  *
  * 校验（对齐规范）：name 仅小写字母/数字/连字符、须等于目录名、description 非空、
@@ -160,7 +160,7 @@ async function loadSkillDir(
   await collectFiles(join(skillDir, 'scripts'), 'scripts', scripts)
 
   const resources: Record<string, string> = {}
-  // scripts 内容也进 resources（模型可读）；执行能力 P2 再上
+  // scripts 内容也进 resources（模型可读）；执行走 run_skill_script（白名单 + 解释器白名单）
   for (const rel of [...refs, ...assets, ...scripts]) {
     const text = await readTextOrNull(join(skillDir, rel))
     if (text !== null) resources[rel] = text
@@ -168,6 +168,7 @@ async function loadSkillDir(
 
   const skill: Skill = {
     ...parsed.skill,
+    root: resolve(root, dirName), // run_skill_script 执行 scripts 用
     ...(Object.keys(resources).length ? { resources } : {}),
     ...(scripts.length ? { scripts } : {})
   }
