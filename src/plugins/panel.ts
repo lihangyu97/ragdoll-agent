@@ -52,17 +52,22 @@ export default {
       )
     })
 
-    if (!existsSync('panel/dist')) {
-      logger.warn(
-        '[panel] panel/dist 不存在，前端未构建（pnpm --filter ragdoll-panel build），页面请求将 404'
-      )
+    // dist 缺失时不挂载 serveStatic：挂了只会在每个请求上打 hono 警告；
+    // 构建由 scripts/ensure-panel-dist.ts 在 dev/start 前置完成
+    if (existsSync('panel/dist')) {
+      app.use('*', serveStatic({ root: './panel/dist' }))
+      // SPA 兜底：非 /api 路径全回 index.html
+      app.get('*', serveStatic({ path: './panel/dist/index.html' }))
+    } else {
+      const hint =
+        '[panel] panel/dist 不存在，静态页面未挂载。可手动 pnpm --filter ragdoll-panel build；开发：pnpm dev:panel 后访问 http://localhost:5173'
+      logger.warn(hint)
+      console.error(hint) // utils logger 只落库，启动提示需要在终端可见
     }
-    app.use('*', serveStatic({ root: './panel/dist' }))
-    // SPA 兜底：非 /api 路径全回 index.html
-    app.get('*', serveStatic({ path: './panel/dist/index.html' }))
 
     const server = serve({ fetch: app.fetch, port: config.port }, info => {
       logger.info(`[panel] http://localhost:${info.port}`)
+      console.log(`[panel] 面板: http://localhost:${info.port}`)
     })
     ctx.effect(() => () => server.close())
   }

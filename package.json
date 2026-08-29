@@ -5,8 +5,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx scripts/ensure-panel-dist.ts && tsx watch src/index.ts",
+    "dev:panel": "concurrently --kill-others -n server,panel -c blue,green \"pnpm dev\" \"pnpm --filter ragdoll-panel dev\"",
+    "start": "tsx scripts/ensure-panel-dist.ts && tsx src/index.ts",
     "start:yml": "tsx scripts/start-yml.ts",
     "seed": "tsx scripts/seed.ts",
     "test": "DB_PATH=:memory: tsx --test",
@@ -32,6 +33,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.0.0",
+    "concurrently": "^10.0.5",
     "drizzle-kit": "^0.31.10",
     "lint-staged": "^17.3.0",
     "oxfmt": "^0.65.0",
