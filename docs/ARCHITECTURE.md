@@ -18,12 +18,15 @@
 
 ## 2. 四大模块与目录
 
-| 模块                  | 目录                    | 职责                                                                                       |
-| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------ |
-| **出入站**（channel） | `src/services/channel/` | 渠道编排（`ChannelService`）+ 渠道契约（`types.ts`）+ 适配器（`adapters/lark/`）           |
-| **调用器**（worker）  | `src/services/worker/`  | 轮询队列、路由归属、执行编排、出站回复                                                     |
-| **agent**             | `src/services/agent/`   | 模型层（`provider/`）+ 能力注册表（`capability/`，数据面）+ 执行（`AgentService`，执行面） |
-| **持久化**（data）    | `src/services/data/`    | `database` + `traces` / `threads` / `turns` / `channels` repository                        |
+| 模块                  | 目录                                                           | 职责                                                                                       |
+| --------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **出入站**（channel） | `src/services/channel/`                                        | 渠道编排（`ChannelService`）+ 渠道契约（`types.ts`）+ 适配器（`adapters/lark/`）           |
+| **调用器**（worker）  | `src/services/worker/`                                         | 轮询队列、路由归属、执行编排、出站回复                                                     |
+| **agent**             | `src/services/agent/`                                          | 模型层（`provider/`）+ 能力注册表（`capability/`，数据面）+ 执行（`AgentService`，执行面） |
+| **持久化**（data）    | `src/services/data/`                                           | `database` + `traces` / `threads` / `turns` / `channels` repository                        |
+| **观察面板**（panel） | `panel/` + `src/services/data/panel/` + `src/plugins/panel.ts` | 前端 Vite 子包 + 只读查询 Service + HTTP 服务插件                                          |
+
+**Service / plugin 拆分约定**：`services/**` 是可注入的能力（含数据访问），构造器无副作用、不自启——测试只挂 Service 即可用内存库跑；`plugins/*.ts` 是生命周期接线的唯一位置（Service 的 start/stop、Config 校验、对外部世界的接线如 HTTP/渠道/事件订阅）。原因：cordis 4 rc 的 Service 无自动启动钩子，`app.plugin(Service)` 只实例化不启动，必须有插件层调 start/stop。纯转发的薄插件（如 `plugins/worker.ts`）也保留此结构，换全仓库统一的心智模型。
 
 ```
                  ┌──────────────────────────────────────────────┐
