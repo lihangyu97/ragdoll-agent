@@ -2,8 +2,9 @@ import { Service, type Context } from 'cordis'
 import { z } from 'zod'
 import { tool, type ClientTool } from '@langchain/core/tools'
 import { execFile } from 'node:child_process'
-import { extname, join } from 'node:path'
+import { extname, join, resolve } from 'node:path'
 import { createSystemTools, type SystemToolsOptions } from './systemTools'
+import logger from '@/utils/logger'
 
 declare module 'cordis' {
   interface Context {
@@ -122,6 +123,8 @@ export default class CapabilityService extends Service {
   private readonly systemTools = new Map<string, ClientTool>()
   private readonly enableSkillScripts: boolean
   private readonly timeoutMs: number
+  /** 文件工具沙箱根目录（绝对路径，暴露给插件落文件用） */
+  readonly root: string
   private _version = 0
 
   constructor(ctx: Context, options: CapabilityOptions = {}) {
@@ -132,6 +135,7 @@ export default class CapabilityService extends Service {
     }
     this.enableSkillScripts = options.enableSkillScripts ?? false
     this.timeoutMs = options.timeoutMs ?? 30_000
+    this.root = resolve(options.root ?? 'data/workspace')
     this.definitions.set(DEFAULT_DEFINITION.id, DEFAULT_DEFINITION)
   }
 
@@ -187,6 +191,21 @@ export default class CapabilityService extends Service {
     return this.skills.has(name)
   }
 
+  /** tool 是否存在（插件/管理侧引用校验用） */
+  hasTool(name: string): boolean {
+    return this.tools.has(name)
+  }
+
+  /** 已注册的领域工具名（系统工具是平台原语，不参与名字引用，不入列） */
+  listToolNames(): string[] {
+    return [...this.tools.keys()]
+  }
+
+  /** 已注册的技能名（catalog 目录 / 管理调试用） */
+  listSkillNames(): string[] {
+    return [...this.skills.keys()]
+  }
+
   /** 同一 id 重复注册 = 覆盖（内置 default 定义可被业务定义替换） */
   registerDefinition(def: AgentDefinition) {
     this.definitions.set(def.id, def)
@@ -228,12 +247,6 @@ export default class CapabilityService extends Service {
     const prompt = this.prompts.get(name)
     if (!prompt) throw new Error(`[capability] prompt 不存在: ${name}`)
     return prompt
-  }
-
-  private getTool(name: string): ClientTool {
-    const t = this.tools.get(name)
-    if (!t) throw new Error(`[capability] tool 不存在: ${name}`)
-    return t
   }
 
   private getSkill(name: string): Skill {
@@ -281,13 +294,19 @@ export default class CapabilityService extends Service {
         tools.push(t)
       }
     }
+    /** 存在性校验：definition/skill 引用了未注册的工具 → 跳过 + warn（如只装了别的渠道插件），不让 assemble 崩 */
+    const addByName = (name: string) => {
+      const t = this.tools.get(name)
+      if (t) add(t)
+      else logger.warn(`[capability] 引用的工具不存在，已跳过: ${name}（definition=${def.id}）`)
+    }
 
     // 系统工具 = 平台执行原语，默认进所有 agent（安全收口交给 P1 guardrails）
     for (const t of this.systemTools.values()) add(t)
-    for (const name of def.tools ?? []) add(this.getTool(name))
+    for (const name of def.tools ?? []) addByName(name)
     for (const skillName of def.skills ?? []) {
       for (const toolName of this.getSkill(skillName).tools ?? []) {
-        add(this.getTool(toolName))
+        addByName(toolName)
       }
     }
 

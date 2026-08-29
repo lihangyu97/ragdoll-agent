@@ -47,6 +47,9 @@
 - id: agent-demo
   name: ./src/plugins/weather/index.ts
 
+- id: lark-image
+  name: ./src/plugins/lark-image.ts
+
 - id: skill-loader
   name: ./src/plugins/skill-loader.ts
   config:

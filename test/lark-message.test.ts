@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  parseImageContent,
   parseMessageContent,
   parsePostContent,
   parseTextContent,
@@ -49,17 +50,39 @@ test('parseTextContent：解析 JSON 并替换提及 key（长 key 优先）', (
 
 test('parsePostContent：post 富文本转纯文本（content_v2 优先，无则 content）', () => {
   const post = JSON.stringify({
-    content_v2: [[{ tag: 'text', text: '你好' }, { tag: 'img' }], [{ tag: 'text', text: '第二行' }]]
+    content_v2: [
+      [
+        { tag: 'text', text: '你好' },
+        { tag: 'img', image_key: 'img_v2_abc' }
+      ],
+      [{ tag: 'text', text: '第二行' }]
+    ]
   })
-  assert.equal(parsePostContent(post), '你好[图片]\n第二行')
+  assert.equal(
+    parsePostContent(post, 'om_1'),
+    '你好[图片 channel=lark message_id=om_1 image_key=img_v2_abc]\n第二行'
+  )
+
+  // 无 image_key 退回纯占位符
+  const noKey = JSON.stringify({ content_v2: [[{ tag: 'img' }]] })
+  assert.equal(parsePostContent(noKey, 'om_1'), '[图片]')
 
   const legacy = JSON.stringify({
     title: '标题',
     content: [[{ tag: 'text', text: '旧格式' }]]
   })
-  assert.equal(parsePostContent(legacy), '标题\n旧格式')
+  assert.equal(parsePostContent(legacy, 'om_1'), '标题\n旧格式')
 
-  assert.equal(parsePostContent('not-json'), 'not-json')
+  assert.equal(parsePostContent('not-json', 'om_1'), 'not-json')
+})
+
+test('parseImageContent：image 消息生成带渠道和 message_id 的占位符，异常原样返回', () => {
+  assert.equal(
+    parseImageContent('{"image_key":"img_v2_abc"}', 'om_9'),
+    '[图片 channel=lark message_id=om_9 image_key=img_v2_abc]'
+  )
+  assert.equal(parseImageContent('{}', 'om_9'), '{}')
+  assert.equal(parseImageContent('not-json', 'om_9'), 'not-json')
 })
 
 test('parseMessageContent：按类型分发，未知类型原样返回', () => {
@@ -69,6 +92,11 @@ test('parseMessageContent：按类型分发，未知类型原样返回', () => {
     content: JSON.stringify({ content_v2: [[{ tag: 'text', text: 'x' }]] })
   })
   assert.equal(parseMessageContent(post), 'x')
+  const image = textMsg({ message_type: 'image', content: '{"image_key":"img_v2_abc"}' })
+  assert.equal(
+    parseMessageContent(image),
+    '[图片 channel=lark message_id=m-1 image_key=img_v2_abc]'
+  )
   assert.equal(parseMessageContent(textMsg({ message_type: 'file', content: 'raw' })), 'raw')
 })
 

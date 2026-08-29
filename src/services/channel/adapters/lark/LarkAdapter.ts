@@ -79,6 +79,29 @@ export default class LarkAdapter extends Service implements ChannelAdapter {
     }
   }
 
+  /**
+   * 下载消息内的图片（fetch_image 工具的数据面）。
+   * 用户发送的图片只能走 messageResource（im.image.get 仅限机器人自己上传的图片），
+   * 返回二进制 + content-type，落盘由调用方决定。
+   */
+  async downloadImage(
+    messageId: string,
+    fileKey: string
+  ): Promise<{ data: Buffer; contentType?: string }> {
+    const res = await this.client.im.messageResource.get({
+      path: { message_id: messageId, file_key: fileKey },
+      params: { type: 'image' }
+    })
+    const chunks: Buffer[] = []
+    for await (const chunk of res.getReadableStream()) {
+      chunks.push(chunk as Buffer)
+    }
+    const contentType = res.headers?.['content-type']
+    const result: { data: Buffer; contentType?: string } = { data: Buffer.concat(chunks) }
+    if (typeof contentType === 'string') result.contentType = contentType
+    return result
+  }
+
   private watchDispatcher() {
     const dispatcher = new lark.EventDispatcher({
       loggerLevel: this.LOGGER_LEVEL
