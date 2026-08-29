@@ -13,8 +13,11 @@ import AgentService from '@/services/agent/AgentService'
 import ChannelService from '@/services/channel/ChannelService'
 import LarkAdapter from '@/services/channel/adapters/lark/LarkAdapter'
 import WorkerService from '@/services/worker/WorkerService'
+// 目录约定：
+// - src/agents/*：子 agent，只通过 ctx.capability 注册工具/skill/definition，不 import core 的 Service 实现（type 除外）
+// - src/plugins/*：基础设施插件（channel、panel、worker 等与具体 agent 无关的胶水）
 import channelLark from '@/plugins/channel-lark'
-import weatherAssistant from '@/plugins/weather'
+import weatherAssistant from '@/agents/weather'
 import larkImage from '@/plugins/lark-image'
 import skillLoader from '@/plugins/skill-loader'
 import worker from '@/plugins/worker'
