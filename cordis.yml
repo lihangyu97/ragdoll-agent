@@ -32,12 +32,16 @@
     commands: !!js (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean)
     enableSkillScripts: !!js process.env.ENABLE_SKILL_SCRIPTS === 'true'
 
-- id: agent
-  name: ./src/services/agent/AgentService.ts
+- id: provider
+  name: ./src/services/agent/provider/ProviderService.ts
   config:
     apiKey: !!js process.env.OPENAI_API_KEY
     baseUrl: !!js process.env.OPENAI_BASE_URL
     model: !!js process.env.OPENAI_MODEL ?? 'deepseek-v4-flash'
+
+- id: agent
+  name: ./src/services/agent/AgentService.ts
+  config:
     dbPath: !!js process.env.DB_PATH ?? 'data/agent.db'
 
 - id: agent-demo

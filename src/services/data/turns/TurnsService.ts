@@ -1,5 +1,5 @@
 import { Service, type Context } from 'cordis'
-import { eq, max } from 'drizzle-orm'
+import { and, eq, max } from 'drizzle-orm'
 import { agentTurns } from '@/services/data/database/schema'
 
 export type AgentTurnRecord = typeof agentTurns.$inferSelect
@@ -21,12 +21,16 @@ export default class TurnsService extends Service {
     super(ctx, 'turns')
   }
 
-  /** 取某 thread 当前最大轮次，没有记录返回 0 */
+  /**
+   * 取某 thread 当前最大轮次，没有记录返回 0。
+   * 过滤 hook_type='INPUT'（语义等价：每轮必有 INPUT 且同轮各 hook 共享 turn_no），
+   * 使查询能命中部分唯一索引 agent_turns(thread_id, turn_no) WHERE INPUT，避免全表扫。
+   */
   getMaxTurnNo(threadId: string): number {
     const row = this.ctx.database.db
       .select({ max: max(agentTurns.turnNo) })
       .from(agentTurns)
-      .where(eq(agentTurns.threadId, threadId))
+      .where(and(eq(agentTurns.threadId, threadId), eq(agentTurns.hookType, 'INPUT')))
       .get()
     return row?.max ?? 0
   }

@@ -13,9 +13,9 @@ export interface TraceStatusEvent {
   status: TraceStatus
 }
 
-/** processing 超过该时长视为"无主"（进程崩溃残留）：worker 启动时回收重置回 pending。
- *  必须大于单次 agent 执行上限（AGENT_RUN_TIMEOUT_MS = 5min），否则会把正在跑的 trace 误判为残留。 */
-export const STALE_PROCESSING_MINUTES = 10
+/** 心跳租约超时（秒）：processing 的 heartbeat_at 超过该时长未刷新视为"无主"（进程崩溃/卡死残留）。
+ *  必须大于心跳刷新间隔（HEARTBEAT_INTERVAL_MS = 30s）并留足抖动冗余，否则会把正在跑的 trace 误判。 */
+export const LEASE_TIMEOUT_SECONDS = 90
 
 declare module 'cordis' {
   interface Context {
@@ -72,9 +72,32 @@ export default class TracesService extends Service {
     return result.changes > 0
   }
 
+  /** 原子抢锁（pending → processing），同时领取心跳租约（写 heartbeat_at） */
+  claimTrace(id: number): boolean {
+    const result = this.ctx.database.db
+      .update(agentTraces)
+      .set({
+        status: TRACE_STATUS.PROCESSING,
+        heartbeatAt: sql`datetime('now', 'localtime')`,
+        updatedAt: sql`datetime('now', 'localtime')`
+      })
+      .where(and(eq(agentTraces.id, id), eq(agentTraces.status, TRACE_STATUS.PENDING)))
+      .run()
+    return result.changes > 0
+  }
+
+  /** 刷新心跳租约（仅当仍处于 processing：已回收/已完成的 trace 不续命） */
+  heartbeat(id: number): void {
+    this.ctx.database.db
+      .update(agentTraces)
+      .set({ heartbeatAt: sql`datetime('now', 'localtime')` })
+      .where(and(eq(agentTraces.id, id), eq(agentTraces.status, TRACE_STATUS.PROCESSING)))
+      .run()
+  }
+
   /**
-   * worker 启动时调用：把超过 STALE_PROCESSING_MINUTES 仍处于 processing 的遗留记录重置回 pending
-   * （进程崩溃/重启后无主）。只回收超时的，避免误伤其他实例正在跑的 trace（多实例安全）。返回重置条数。
+   * 回收租约过期的 processing 记录（heartbeat_at 超 LEASE_TIMEOUT_SECONDS 未刷新）重置回 pending。
+   * 心跳证明活性，多实例下正在跑的实例不会被判死；恢复语义 = 至少一次（工具副作用需幂等）。返回重置条数。
    */
   resetStaleProcessingTraces(): number {
     const result = this.ctx.database.db
@@ -84,8 +107,8 @@ export default class TracesService extends Service {
         and(
           eq(agentTraces.status, TRACE_STATUS.PROCESSING),
           lt(
-            agentTraces.updatedAt,
-            sql`datetime('now', 'localtime', ${`-${STALE_PROCESSING_MINUTES} minutes`})`
+            agentTraces.heartbeatAt,
+            sql`datetime('now', 'localtime', ${`-${LEASE_TIMEOUT_SECONDS} seconds`})`
           )
         )
       )

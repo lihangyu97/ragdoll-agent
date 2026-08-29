@@ -193,11 +193,11 @@ test('启动恢复：进程崩溃遗留的超时 processing trace 被重置并�
   t.after(() => ctx.worker.stop())
 
   const traceId = seedTrace('t1', 'hello')
-  // 模拟崩溃残留：processing 状态 + updated_at 已是 20 分钟前（超过 STALE_PROCESSING_MINUTES）
+  // 模拟崩溃残留：processing 状态 + 租约已过期（heartbeat_at 在 2 分钟前，超 LEASE_TIMEOUT_SECONDS=90s）
   ctx.traces.updateTraceStatus(traceId, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
   ctx.database.db
     .update(agentTraces)
-    .set({ updatedAt: sql`datetime('now', 'localtime', '-20 minutes')` })
+    .set({ heartbeatAt: sql`datetime('now', 'localtime', '-2 minutes')` })
     .where(eq(agentTraces.id, traceId))
     .run()
 
@@ -223,6 +223,11 @@ test('启动恢复：新鲜的 processing（其他实例正在跑）不被误伤
 
   const traceId = seedTrace('t1', 'hello')
   ctx.traces.updateTraceStatus(traceId, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING) // 新鲜 processing
+  ctx.database.db
+    .update(agentTraces)
+    .set({ heartbeatAt: sql`datetime('now', 'localtime')` }) // 其他实例刚领的租约：新鲜
+    .where(eq(agentTraces.id, traceId))
+    .run()
 
   ctx.worker.start()
   await new Promise(resolve => setTimeout(resolve, 100)) // 给 poll 一轮时间

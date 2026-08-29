@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, uniqueIndex, index } from 'drizzle-orm/sqlite-core'
 
 /* ===== 状态常量（唯一事实来源，禁止魔法字符串） ===== */
 
@@ -96,20 +96,27 @@ export const agentThreads = sqliteTable('agent_threads', {
   updatedAt: text('updated_at').default(sql`(datetime('now', 'localtime'))`)
 })
 
-export const agentTraces = sqliteTable('agent_traces', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  threadId: text('thread_id')
-    .notNull()
-    .references(() => agentThreads.threadId),
-  messageId: text('message_id').notNull(),
-  chatId: text('chat_id').notNull(),
-  /** 来源渠道 id（'lark' | 'telegram'…）：worker 出站回复路由依据 */
-  channel: text('channel'),
-  inputText: text('input_text').notNull(),
-  status: text('status').notNull().default(TRACE_STATUS.PENDING).$type<TraceStatus>(),
-  createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`),
-  updatedAt: text('updated_at').default(sql`(datetime('now', 'localtime'))`)
-})
+export const agentTraces = sqliteTable(
+  'agent_traces',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    threadId: text('thread_id')
+      .notNull()
+      .references(() => agentThreads.threadId),
+    messageId: text('message_id').notNull(),
+    chatId: text('chat_id').notNull(),
+    /** 来源渠道 id（'lark' | 'telegram'…）：worker 出站回复路由依据 */
+    channel: text('channel'),
+    inputText: text('input_text').notNull(),
+    status: text('status').notNull().default(TRACE_STATUS.PENDING).$type<TraceStatus>(),
+    /** 心跳租约时间戳：claim（pending→processing）时写入，处理期间 worker 每 30s 刷新；超 90s 未刷新判死回收 */
+    heartbeatAt: text('heartbeat_at'),
+    createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`),
+    updatedAt: text('updated_at').default(sql`(datetime('now', 'localtime'))`)
+  },
+  // worker poll 热点查询（每 3s + while 循环内连续调）：WHERE status='pending' ORDER BY created_at
+  t => [index('agent_traces_status_created_at').on(t.status, t.createdAt)]
+)
 
 export const logger = sqliteTable('logger', {
   id: integer('id').primaryKey({ autoIncrement: true }),

@@ -1,0 +1,1 @@
+ALTER TABLE `agent_traces` ADD `heartbeat_at` text;

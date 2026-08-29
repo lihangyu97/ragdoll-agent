@@ -90,14 +90,76 @@ test('失败路径：processing → failed', () => {
   assert.equal(getStatus(trace.id), TRACE_STATUS.FAILED)
 })
 
-test('resetStaleProcessingTraces：超时（>10min）的 processing 重置回 pending', () => {
+test('claimTrace：抢锁成功（pending → processing）并领取心跳租约', () => {
+  seedTrace('t1', 'hello')
+  const trace = ctx.traces.getPendingTrace()!
+  assert.equal(ctx.traces.claimTrace(trace.id), true)
+  const row = ctx.database.db
+    .select({ status: agentTraces.status, heartbeatAt: agentTraces.heartbeatAt })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, trace.id))
+    .get()
+  assert.equal(row?.status, TRACE_STATUS.PROCESSING)
+  assert.ok(row?.heartbeatAt) // 租约已写
+})
+
+test('claimTrace：已被抢走（非 pending）→ false', () => {
+  seedTrace('t1', 'hello')
+  const trace = ctx.traces.getPendingTrace()!
+  assert.equal(ctx.traces.claimTrace(trace.id), true)
+  assert.equal(ctx.traces.claimTrace(trace.id), false) // 已是 processing
+})
+
+test('heartbeat：processing 时刷新租约；done 后不刷（状态条件不匹配）', () => {
+  seedTrace('t1', 'hello')
+  const trace = ctx.traces.getPendingTrace()!
+  ctx.traces.claimTrace(trace.id)
+  ctx.database.db
+    .update(agentTraces)
+    .set({ heartbeatAt: sql`datetime('now', 'localtime', '-2 minutes')` })
+    .where(eq(agentTraces.id, trace.id))
+    .run()
+  const stale = ctx.database.db
+    .select({ heartbeatAt: agentTraces.heartbeatAt })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, trace.id))
+    .get()?.heartbeatAt
+  ctx.traces.heartbeat(trace.id)
+  const row = ctx.database.db
+    .select({ status: agentTraces.status, heartbeatAt: agentTraces.heartbeatAt })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, trace.id))
+    .get()
+  assert.notEqual(row?.heartbeatAt, stale) // 已刷新回当前时间
+
+  ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
+  ctx.database.db
+    .update(agentTraces)
+    .set({ heartbeatAt: sql`datetime('now', 'localtime', '-2 minutes')` })
+    .where(eq(agentTraces.id, trace.id))
+    .run()
+  const doneStale = ctx.database.db
+    .select({ heartbeatAt: agentTraces.heartbeatAt })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, trace.id))
+    .get()?.heartbeatAt
+  ctx.traces.heartbeat(trace.id)
+  const doneRow = ctx.database.db
+    .select({ heartbeatAt: agentTraces.heartbeatAt })
+    .from(agentTraces)
+    .where(eq(agentTraces.id, trace.id))
+    .get()
+  assert.equal(doneRow?.heartbeatAt, doneStale) // done 状态下不刷新
+})
+
+test('resetStaleProcessingTraces：租约过期（heartbeat_at >90s 未刷新）的重置回 pending', () => {
   seedTrace('t1', 'hello')
   const trace = ctx.traces.getPendingTrace()!
   ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
-  // 把 updated_at 改到 20 分钟前，模拟进程崩溃后遗留的无主 processing
+  // 把 heartbeat_at 改到 2 分钟前，模拟进程崩溃/卡死后遗留的无主 processing
   ctx.database.db
     .update(agentTraces)
-    .set({ updatedAt: sql`datetime('now', 'localtime', '-20 minutes')` })
+    .set({ heartbeatAt: sql`datetime('now', 'localtime', '-2 minutes')` })
     .where(eq(agentTraces.id, trace.id))
     .run()
   const reset = ctx.traces.resetStaleProcessingTraces()
@@ -105,10 +167,10 @@ test('resetStaleProcessingTraces：超时（>10min）的 processing 重置回 pe
   assert.equal(ctx.traces.getPendingTrace()?.id, trace.id) // 又能被领取
 })
 
-test('resetStaleProcessingTraces：新鲜的 processing 不重置（多实例安全，不误伤正在跑的）', () => {
+test('resetStaleProcessingTraces：租约新鲜的 processing 不重置（多实例安全，不误伤正在跑的）', () => {
   seedTrace('t1', 'hello')
   const trace = ctx.traces.getPendingTrace()!
-  ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PENDING, TRACE_STATUS.PROCESSING)
+  ctx.traces.claimTrace(trace.id) // 正常领取：租约是新鲜的
   const reset = ctx.traces.resetStaleProcessingTraces()
   assert.equal(reset, 0)
   const row = ctx.database.db

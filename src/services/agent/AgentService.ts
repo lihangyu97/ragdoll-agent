@@ -2,7 +2,6 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { Service, type Context } from 'cordis'
 import { z } from 'zod'
-import { ChatOpenAI } from '@langchain/openai'
 import { createAgent } from 'langchain'
 import { AIMessage, ToolMessage, SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
@@ -42,31 +41,18 @@ const IDENTIFY_SCHEMA = z.object({
 })
 
 export default class AgentService extends Service {
-  static inject = ['capability', 'turns']
+  static inject = ['capability', 'turns', 'provider']
 
   static Config = z.object({
-    apiKey: z.string().min(1),
-    baseUrl: z.string().min(1),
-    model: z.string().default('deepseek-v4-flash'),
     dbPath: z.string().default('data/agent.db')
   })
 
-  private readonly model: ChatOpenAI
   private readonly checkpointer: SqliteSaver
   /** 按 agentId 的运行时缓存：capability 注册表 version 变更即全部失效，下次 run 重建 */
   private runtimes = new Map<string, { version: number; agent: ReturnType<typeof createAgent> }>()
 
   constructor(ctx: Context, config: z.infer<typeof AgentService.Config>) {
     super(ctx, 'agent')
-
-    this.model = new ChatOpenAI({
-      model: config.model,
-      apiKey: config.apiKey,
-      streaming: true,
-      timeout: 60_000,
-      maxRetries: 2,
-      configuration: { baseURL: config.baseUrl }
-    })
     this.checkpointer = this.initCheckpointer(config.dbPath)
   }
 
@@ -160,7 +146,7 @@ export default class AgentService extends Service {
    * 轻量无状态 router：无 checkpointer、无系统工具，withStructuredOutput 强制 {agentId | null}。
    * 识别失败/超时 → null（调用方降级 default）；agentId 合法性由调用方用 capability.hasDefinition 校验。
    */
-  async identify(input: string, chatType = ''): Promise<string | null> {
+  async identify(input: string): Promise<string | null> {
     const definitions = this.ctx.capability.listDefinitions()
     const catalog = definitions
       .map(d => `- ${d.id}：${d.basePrompt.split('\n')[0]?.slice(0, 80) ?? ''}`)
@@ -172,14 +158,14 @@ export default class AgentService extends Service {
         '2. 无法确定、或不需要任何助手时返回 null。\n' +
         '输出格式：{"agentId": "助手 id 或 null"}，不要解释。'
     )
-    const human = new HumanMessage(
-      chatType ? `会话类型：${chatType}\n用户消息：${input}` : `用户消息：${input}`
-    )
+    const human = new HumanMessage(`用户消息：${input}`)
 
     try {
       // jsonMode：中转站对 functionCalling 的 tool_choice 支持不稳（thinking 模式报 400），
       // json_object 要求 prompt 里出现 "json" 字样（上面已包含）
-      const classifier = this.model.withStructuredOutput(IDENTIFY_SCHEMA, { method: 'jsonMode' })
+      const classifier = this.ctx.provider
+        .getModel()
+        .withStructuredOutput(IDENTIFY_SCHEMA, { method: 'jsonMode' })
       const result = await classifier.invoke([system, human])
       return result.agentId
     } catch (err) {
@@ -200,7 +186,7 @@ export default class AgentService extends Service {
       this.runtimes.set(agentId, {
         version,
         agent: createAgent({
-          model: this.model,
+          model: this.ctx.provider.getModel(),
           tools: spec.tools,
           systemPrompt: spec.systemPrompt,
           checkpointer: this.checkpointer

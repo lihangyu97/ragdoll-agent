@@ -23,17 +23,25 @@ declare module 'cordis' {
 }
 
 const POLL_INTERVAL_MS = 3_000
+/** 心跳刷新间隔：处理期间周期续租，证明本实例存活（30s，租约超时见 TracesService.LEASE_TIMEOUT_SECONDS） */
+const HEARTBEAT_INTERVAL_MS = 30_000
+/** 租约 sweep 周期：周期性回收租约过期的 processing trace（不依赖重启，单实例也能自愈） */
+const SWEEP_INTERVAL_MS = 60_000
 
 /**
  * worker Service：周期轮询 agent_traces 队列，取 pending 记录交给 process 处理
- * （路由归属 → agent.run → 出站回复）。
- * todo: 无主 trace 心跳租约回收
+ * （路由归属 → agent.run → 出站回复）。处理期间持有租约（30s 心跳续租），
+ * 租约过期（90s 未刷新）的 trace 由周期 sweep 回收重派——多实例安全，恢复语义为至少一次。
  */
 export default class WorkerService extends Service {
   static inject = ['agent', 'capability', 'traces', 'threads', 'channel']
 
   private timer: ReturnType<typeof setInterval> | null = null
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private processing = false
+  /** 当前持有租约的 trace id（worker 串行处理，同一时刻至多一条；心跳 timer 据此续租） */
+  private currentTraceId: number | null = null
+  private lastSweepAt = 0
 
   constructor(ctx: Context) {
     super(ctx, 'worker')
@@ -41,8 +49,11 @@ export default class WorkerService extends Service {
 
   start() {
     if (this.timer) return
-    this.recoverStaleTraces()
+    this.lastSweepAt = 0 // 让首轮 poll 顺带做一次启动 sweep（回收崩溃遗留）
     this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS)
+    this.heartbeatTimer = setInterval(() => {
+      if (this.currentTraceId !== null) this.ctx.traces.heartbeat(this.currentTraceId)
+    }, HEARTBEAT_INTERVAL_MS)
     this.poll()
   }
 
@@ -51,16 +62,21 @@ export default class WorkerService extends Service {
       clearInterval(this.timer)
       this.timer = null
     }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+    this.currentTraceId = null
   }
 
-  /**
-   * 启动恢复：把进程崩溃/重启遗留的超时 processing trace 重置回 pending（只回收超过
-   * STALE_PROCESSING_MINUTES 的无主记录，不误伤其他实例正在跑的 trace），随后 poll 会重新领取。
-   */
-  private recoverStaleTraces() {
+  /** 启动恢复改为 poll 内周期 sweep：首轮必触发（lastSweepAt=0），此后每 SWEEP_INTERVAL_MS 一次 */
+  private maybeSweep() {
+    const now = Date.now()
+    if (now - this.lastSweepAt < SWEEP_INTERVAL_MS) return
+    this.lastSweepAt = now
     const recovered = this.ctx.traces.resetStaleProcessingTraces()
     if (recovered > 0) {
-      logger.warn(`[worker] 启动恢复 ${recovered} 条遗留 processing trace`)
+      logger.warn(`[worker] 回收 ${recovered} 条租约过期的 processing trace`)
     }
   }
 
@@ -68,20 +84,22 @@ export default class WorkerService extends Service {
     if (this.processing) return
     this.processing = true
     try {
+      this.maybeSweep()
       while (true) {
         const trace = this.ctx.traces.getPendingTrace()
         if (!trace) return
 
-        // 原子抢锁：pending → processing，失败说明被其他进程抢走
-        const locked = this.ctx.traces.updateTraceStatus(
-          trace.id,
-          TRACE_STATUS.PENDING,
-          TRACE_STATUS.PROCESSING
-        )
+        // 原子抢锁 + 领租约：失败说明被其他进程抢走
+        const locked = this.ctx.traces.claimTrace(trace.id)
         if (!locked) continue
 
-        // process 内部自兜底（标记 failed + 出站失败回复），永不外抛：单条失败不中断队列
-        await this.process(trace)
+        this.currentTraceId = trace.id
+        try {
+          // process 内部自兜底（标记 failed + 出站失败回复），永不外抛：单条失败不中断队列
+          await this.process(trace)
+        } finally {
+          this.currentTraceId = null
+        }
       }
     } catch (err) {
       // 队列基础设施异常（取队列/抢锁本身出错）：记录后等下一轮 poll 重试
@@ -108,18 +126,28 @@ export default class WorkerService extends Service {
         const agentId = await this.resolveAgentId(trace)
         const answer = await this.ctx.agent.run(trace.inputText, trace.threadId, agentId)
 
-        this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
-        this.ctx.emit('trace/status', { threadId: trace.threadId, status: TRACE_STATUS.DONE })
-        logger.info(`[worker] agent run done (agent=${agentId})`)
-        await this.replyIfNeeded(trace, answer)
+        // 结果与回复都挂在 CAS 成功之后：租约被回收重派后所有权易主，
+        // 旧实例的收尾不得再写状态/回复（at-least-once 下防用户收到两条回复）
+        if (
+          this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.DONE)
+        ) {
+          this.ctx.emit('trace/status', { threadId: trace.threadId, status: TRACE_STATUS.DONE })
+          logger.info(`[worker] agent run done (agent=${agentId})`)
+          await this.replyIfNeeded(trace, answer)
+        } else {
+          logger.warn(`[worker] trace 所有权已易主，放弃结果（id=${trace.id}）`)
+        }
       })
     } catch (err) {
       // agent.run 失败时内部已 emit agent/error 后重抛，这里统一收口：
       // 标记 failed（CAS 保证已 done 的 trace 不会被误标）+ 出站失败回复
       logger.error(`[worker] trace 处理失败（id=${trace.id} thread=${trace.threadId}）: `, err)
-      this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
-      this.ctx.emit('trace/status', { threadId: trace.threadId, status: TRACE_STATUS.FAILED })
-      await this.replyIfNeeded(trace, `Agent 处理失败：${stringify(err)}`)
+      if (
+        this.ctx.traces.updateTraceStatus(trace.id, TRACE_STATUS.PROCESSING, TRACE_STATUS.FAILED)
+      ) {
+        this.ctx.emit('trace/status', { threadId: trace.threadId, status: TRACE_STATUS.FAILED })
+        await this.replyIfNeeded(trace, `Agent 处理失败：${stringify(err)}`)
+      }
     }
   }
 
