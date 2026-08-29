@@ -1,9 +1,9 @@
 # Ragdoll 架构说明
 
-> 状态：2025-08-26，渠道抽象（ChannelAdapter）+ agent 契约中立化重构后整理。
+> 状态：2026-08-29，心跳租约 + 队列索引实施、interrupt/resume 设计储备整理。
 > 本文件是仓库**唯一**的架构文档，由 docs/ 下多份旧文档合并而来（feishu-agent-integration /
-> cordis-migration / agent-capability-design / worker-multi-instance / orm-examples / TODO / lark.json
-> 均已删除）。编码原则见仓库根 `AGENTS.md`。
+> cordis-migration / agent-capability-design / worker-multi-instance / orm-examples / TODO / lark.json /
+> KNOWN-ISSUES / TOOLS 均已删除并入本文）。编码原则见仓库根 `AGENTS.md`。
 
 ---
 
@@ -12,7 +12,7 @@
 学习用的 agent 项目（TypeScript）：渠道消息 → SQLite 队列 → agent 执行 → 出站回复。
 
 - **框架**：cordis 4（koishi 同款 DI + 插件框架）
-- **agent**：langchain（`createAgent` + SqliteSaver checkpointer）；模型层独立为 provider Service（AgentService 经 `getModel()` 取模型实例）；对外契约框架无关（见 §3.2）
+- **agent**：langchain（`createAgent` + SqliteSaver checkpointer，内含 langgraph 1.4）；模型层独立为 provider Service（AgentService 经 `getModel()` 取模型实例）；对外契约框架无关（见 §3.2）
 - **存储**：better-sqlite3 + drizzle-orm（表定义唯一来源 `src/services/data/database/schema.ts`）
 - **配置**：环境变量 → 各 Service `static Config`（zod）校验，缺配置 → 插件 FAILED
 
@@ -110,7 +110,7 @@ interface InboundMessage {
 | `channel_users`    | 渠道用户缓存     | `UNIQUE(channel, user_id)`；lark 的 open_id → 用户名                                                                                                                                                                                            |
 | `agent_threads`    | 会话线程         | `thread_id` PK（带渠道前缀）；`agent_id` = 绑定的 agent definition（一次性定终身）                                                                                                                                                              |
 | `agent_traces`     | 消息队列         | pending → processing → done/failed；`channel` 列是出站路由依据；worker 抢锁 CAS（`claimTrace`）+ 心跳租约（`heartbeat_at`：领取写入、30s 续租、90s 未刷新判死、周期 sweep 回收，恢复语义 = 至少一次）；索引 `(status, created_at)`（poll 热点） |
-| `agent_turns`      | 每轮执行轨迹     | turn-recorder 写入（INPUT / TOOL_CALL / TOOL_RESULT / AGENT_RESULT / ERROR / TIMEOUT）；`UNIQUE(thread_id, turn_no) WHERE hook_type='INPUT'`（防并发重复开轮）                                                                                  |
+| `agent_turns`      | 每轮执行轨迹     | turn-recorder 写入（INPUT / TOOL_CALL / TOOL_RESULT / AGENT_RESULT / ERROR / TIMEOUT）；`UNIQUE(thread_id, turn_no) WHERE hook_type='INPUT'`（防并发重复开轮，`getMaxTurnNo` 靠 `hook_type='INPUT'` 过滤复用此索引）                            |
 | `logger`           | 日志落库         | `@/utils/logger` 直接写，不经 database Service（写失败不中断业务）                                                                                                                                                                              |
 
 ## 4. 事件协议一览
@@ -150,7 +150,7 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 - **技能脚本执行（`run_skill_script`）**：`CapabilityService` 开 `enableSkillScripts`（`ENABLE_SKILL_SCRIPTS=true`）后注入；仅执行 `skills/<name>/scripts/` 白名单索引内的脚本，解释器白名单（bash/sh、python3、node），`execFile` 无 shell 注入面，cwd 限定技能目录 + 超时 + 输出截断；与 `run_command` 同为演示级护栏，真隔离需 OS 沙箱/容器
 - `registerDefinition(def)`：`{ id, basePrompt, personas?, skills?, skillMode?, tools? }` 声明式规格，`assemble(def)` 产出 `AgentSpec`（systemPrompt + tools）
 
-## 6. 待办
+## 6. 待办与设计储备
 
 ### P1：knowledge + guardrails + 观测增强
 
@@ -163,9 +163,28 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 - [ ] telegram adapter（实现 ChannelAdapter 验证插拔，同时验证 threadId 前缀约定）
 - [ ] 换 agent 框架时拆 backend 适配层（当前泄漏已堵死，改动收敛在 agent 模块）
 
-### 待定
+### 设计储备：langgraph interrupt / resume（人工审批 / 对话暂停）
 
-（原"worker 多实例心跳租约回收"与"数据库索引"已实施：见 §3.3 `agent_traces` 行；多实例部署时直接上 pm2 即可，poll 抢锁 CAS + 租约回收已多实例安全）
+> 2026-08-29 调研结论（仓库内 langgraph 1.4.10，`interrupt` / `Command` API 已具备）。
+> 触发场景：P1 guardrails 的高危工具审批、未来的对话暂停。**当前未实施**。
+
+**核心机制**：图执行中调用 `interrupt(payload)` 会抛特殊的 `GraphInterrupt`（不是错误），langgraph 捕获后把整张图的执行状态写进 checkpointer 并正常返回——进程此后可直接死掉，状态在 SQLite 里不丢。恢复时对同一 `thread_id` 传 `new Command({ resume: value })`（而非新消息），langgraph 加载 checkpoint 回到挂起节点。
+
+**一个反直觉细节**：恢复时**节点函数从头重放**，重放走到 `interrupt()` 不再抛暂停，而是直接返回 resume 传入的值。推论：interrupt 之前的代码重放会再跑一遍，断点前不能有不可重复的副作用。
+
+**两种用途（勿混淆）**：
+
+1. **人工审批（设计初衷）**：高危工具执行前 interrupt 问人，用户确认后 resume 继续。guardrails 的天然实现路径，无需自建审批协议。
+2. **跨进程崩溃恢复**：interrupt/resume **不会自动续跑**——挂起后必须有存活方主动 resume。调度部分仍归心跳租约（sweep 重派），它只提供"状态没丢、可精确续跑"的能力。
+
+**真要做要动的四处**：
+
+1. run 收尾判断：`agent.stream` 结束后用 `agent.getState()` 查 tasks 是否挂起 interrupt（不是解析流事件）；挂起 → trace 不标 DONE、不回复，"有断点"落库（`agent_threads` 加状态列）
+2. 重派分叉：worker 领取重置回 pending 的 trace 时，先查 thread 有无挂起断点——有走 `Command.resume`，没有才走现在的整轮重跑
+3. 审批触发者路由（审批场景最大的一块胶水）：thread 有挂起审批时，用户下一条消息不是新任务，而是 resume 的值（yes/no），消息入口要加这层判别
+4. 观测层：resume 产生的事件流没有新 `agent/input`，turn-recorder 轮次要能对上
+
+**现阶段结论**：崩溃恢复继续交给租约（重跑代价小）；做 guardrails 时以审批身份引入 interrupt，对话暂停是其自然延伸。当前不实施。
 
 ## 7. 约定与坑
 
@@ -183,6 +202,35 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 - **yml 启动**：`pnpm start:yml` 必须用 tsx 跑（loader 的 import 不经 tsx 无法解析 `@/*` 别名）；yml 敏感配置用 `!!js` 标签写环境变量表达式（**是 `!!js` 不是 `!js`**）
 - **别过度设计**：保留原生 sqlite（不上 minato / `ctx.model`）、保留 DB 队列；不做投机抽象（单一实现不提前做接口）
 
+## 8. 已知问题与风险
+
+> 2026-08-29 全仓库 review 后整理（原 docs/KNOWN-ISSUES.md 并入）。与 §6 待办互补，
+> 待办已有的不重复展开，只在相关条目引用。已修复的条目随手标注。
+
+### 8.1 运行模型
+
+- **worker 完全串行（优先级最高）**：`poll()` 用 `processing` 标志 + 循环内 `await process()`，整条队列一次只处理一条，单实例无并发；一条 agent run 最长 5 分钟，期间所有人排队。改进方向：并发度可配置的 worker pool，或按 threadId 分桶并行。抢锁/租约已多实例安全（§3.3），并发化只改 worker 内部。
+- **thread 绑定「一次性定终身」且不可逆**：首条消息即永久绑定；LLM 识别失败会**静默绑定 `default` 并永久生效**；无解绑/重绑命令。改进方向：规则层命中才永久绑定；LLM 识别结果可临时生效、N 轮后再落库；提供管理命令。
+- **失败即丢，无重试**：failed 只标记 + 回错误消息，无重试计数/重新投递；出站 `channel.send` 失败只记日志，回复永久丢失。注：收尾 CAS 已防"租约重派后重复回复"，但 **DONE 与 reply 之间的崩溃窗口仍在**（状态 done、回复丢失）。改进方向：failed 可重试计数；出站失败重试队列。
+- **双连接共用同一个 SQLite 文件**：业务库与 checkpointer 默认都是 `data/agent.db`，两条独立连接，WAL + busy_timeout 只是缓解。根治：checkpointer 指向独立文件，或换共享连接的 checkpointer 实现。
+
+### 8.2 安全（接入真实用户前必须处理）
+
+> 现有护栏（路径前缀校验 / 命令白名单 / 解释器白名单）均为演示级；最终边界 = OS 沙箱/容器（P1 guardrails）。
+
+- **系统工具默认注入所有 agent**：六个原语无法按 definition 裁剪，guardrails 前至少支持 definition 级白/黑名单
+- **`safePath` 不解析 symlink**：`resolve()` + 前缀判断不 `realpath`，沙箱内指向外部的符号链接即可越界
+- **`run_command` 白名单是前缀匹配**：`ls; rm -rf …` 拼接即绕过；启用时建议仅允许无参数固定命令或 argv 精确匹配（现默认已禁用）
+- **`run_skill_script` 的脚本内容随时可改**：白名单锁定路径不是内容；默认关（现默认已关）
+- **无用户/群鉴权与限流**：任何渠道用户都能驱动 agent 跑工具，无 allowlist/限流/配额
+
+### 8.3 工程卫生
+
+- ~~`AGENST.md` 拼写错误~~（已改名 `AGENTS.md`）、~~`identify` 死参数 `chatType`~~（已删除）
+- **无 CI**：10 个测试文件覆盖不错，但只能本地手动跑；建议最小 CI = `typecheck + lint + test + format:check`
+- **依赖 cordis `4.0.0-rc.8` / loader `rc` 版本**：pre-release 框架 API 变动风险，升级时留意 changelog
+- **`answer` 取「流里最后一个非工具消息」**：中间节点产出非空文本会覆盖语义上的最终答案；换框架/加子图时要重审
+
 ## 附录
 
 ### lark（飞书）配置
@@ -195,3 +243,12 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 ### ORM 选型结论
 
 **Drizzle + better-sqlite3**（drizzle-orm 0.45 无 node:sqlite 驱动，better-sqlite3 是官方 SQLite 首选；不上 minato/`ctx.model`）。`drizzle-kit generate` 生成迁移，运行时 `migrate` 应用。
+
+### 工具链（oxlint / oxfmt）
+
+> 原 docs/TOOLS.md（2026-08-29 实测评估）并入。版本：oxlint 1.80.0、oxfmt 0.65.0。
+
+- **已接入并替代 prettier**：`lint: oxlint`、`lint:fix`、`format: oxfmt --write .`、`format:check`；pre-commit（lint-staged）按类型分工——代码文件 `oxfmt --write` + `oxlint --fix`，json/md/yml 走 `oxfmt --write`。prettier 依赖已移除（`.prettierrc` / `.prettierignore` 保留作回退参考，风格由 `.oxfmtrc.json` 主导，经 `--migrate=prettier` 生成，输出与原 prettier 零差异）
+- **oxlint 规则取舍**：默认 correctness 分类零噪音直接启用；`-D perf/suspicious` 报的多为真问题；`pedantic` 偏风格洁癖不开
+- **风险提示**：oxfmt 尚在 0.x，格式输出后续版本可能微调（可回退 prettier，风险低）
+- **编辑器**：命令行走本仓库 scripts；VSCode 全局 formatter 与 oxfmt 输出一致，如需实时诊断可装 `oxc.oxc-vscode` 扩展
