@@ -1,6 +1,6 @@
-# Ragdoll
+# ragdoll-agent
 
-学习用的 agent 项目（TypeScript）：接入飞书等渠道，把消息变成 agent 任务——**渠道消息 → SQLite 队列 → agent 执行 → 出站回复**。
+学习用的 agent 项目（TypeScript）：接入飞书等渠道，把消息变成 agent 任务——**渠道消息 → SQLite 队列 → agent 执行 → 出站回复**，并自带一个观察面板可视化队列/会话/轨迹/日志。
 
 ## 核心链路
 
@@ -81,12 +81,15 @@
 | worker  | `src/services/worker/`  | 轮询队列、路由归属、执行编排、出站回复                     |
 | agent   | `src/services/agent/`   | 模型层（provider）+ 能力注册表（capability）+ 执行（loop） |
 | data    | `src/services/data/`    | SQLite（drizzle-orm）：队列 / 会话 / 轨迹 / 渠道消息       |
+| panel   | `src/plugins/panel.ts`  | 观察面板：`/api` 只读查询 + 前端静态托管（端口 3111）      |
+
+子 agent 放在 `src/agents/<name>/`：只通过 `ctx.capability` 注册工具 / skill / definition，不改核心代码（现有 weather demo）。`src/plugins/` 则是与具体 agent 无关的基础设施插件。
 
 插件化装配基于 cordis 4（koishi 同款 DI 框架），见 `cordis.yml`；技能系统对齐 agentskills.io 规范，往 `skills/` 丢目录即可被所有 agent 发现（`load_skill` 渐进加载）。
 
 ## 技术栈
 
-TypeScript · cordis 4（DI/插件）· langchain / langgraph · better-sqlite3 + drizzle-orm · zod
+TypeScript · cordis 4（DI/插件）· langchain / langgraph · better-sqlite3 + drizzle-orm · zod · React 19 + Vite + Tailwind（面板前端）
 
 ## 快速开始
 
@@ -98,9 +101,13 @@ pnpm seed              # 写入种子用户（channel_users，可按需在 scrip
 pnpm dev
 ```
 
+`pnpm dev` 会自动构建面板（`panel/dist` 缺失时）并启动后端，启动后访问 **http://localhost:3111** 即面板。
+
+前端开发调试用 `pnpm dev:panel`：同时起后端（3111）与 vite dev server（5173，`/api` 自动代理），改前端代码即时热更新。
+
 yml 方式装配启动：`pnpm start:yml`。测试：`pnpm test`。
 
 ## 文档
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) —— 唯一架构文档：核心契约、事件协议、数据表、扩展指南、待办与设计储备、已知问题
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) —— 唯一架构文档：模块与目录、核心契约、事件协议、扩展指南、待办与设计储备、约定与坑、已知问题
 - [AGENTS.md](AGENTS.md) —— 编码原则
