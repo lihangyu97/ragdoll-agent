@@ -74,5 +74,13 @@
 - id: turn-recorder
   name: ./src/plugins/turn-recorder.ts
 
+- id: panel
+  name: ./src/services/data/panel/PanelService.ts
+
+- id: panel-plugin
+  name: ./src/plugins/panel.ts
+  config:
+    port: !!js Number(process.env.PANEL_PORT ?? 3111)
+
 - id: console-demo
   name: ./src/plugins/output.ts

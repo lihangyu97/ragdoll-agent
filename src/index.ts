@@ -5,6 +5,7 @@ import DatabaseService from '@/services/data/database/DatabaseService'
 import TracesService from '@/services/data/traces/TracesService'
 import ThreadsService from '@/services/data/threads/ThreadsService'
 import TurnsService from '@/services/data/turns/TurnsService'
+import PanelService from '@/services/data/panel/PanelService'
 import ChannelStoreService from '@/services/data/channels/ChannelStoreService'
 import CapabilityService from '@/services/agent/capability/CapabilityService'
 import ProviderService from '@/services/agent/provider/ProviderService'
@@ -16,6 +17,7 @@ import channelLark from '@/plugins/channel-lark'
 import weatherAssistant from '@/plugins/weather'
 import skillLoader from '@/plugins/skill-loader'
 import worker from '@/plugins/worker'
+import panel from '@/plugins/panel'
 import turnRecorder from '@/plugins/turn-recorder'
 // import output from '@/plugins/output'
 
@@ -46,6 +48,7 @@ app.plugin(DatabaseService, { dbPath: process.env.DB_PATH ?? 'data/agent.db' })
 app.plugin(TracesService)
 app.plugin(ThreadsService)
 app.plugin(TurnsService)
+app.plugin(PanelService)
 app.plugin(ChannelStoreService)
 app.plugin(CapabilityService, {
   root: process.env.SYSTEM_TOOLS_ROOT ?? 'data/workspace',
@@ -72,6 +75,7 @@ app.plugin(channelLark)
 app.plugin(WorkerService)
 app.plugin(worker)
 app.plugin(turnRecorder)
+app.plugin(panel, { port: Number(process.env.PANEL_PORT ?? 3111) })
 // app.plugin(output)
 
 let closing = false
