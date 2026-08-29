@@ -37,8 +37,16 @@
 2. lint-staged 按文件类型分工：`*.{ts,js,mjs,cjs,jsx,tsx}` 走 `oxfmt --write` +
    `oxlint --fix`；`*.{json,md,yml,yaml}` 仍走 prettier（oxfmt 对非代码文件报错退出，
    格式能力只覆盖代码）
-3. prettier 保留（两者输出一致不冲突），稳定后可移除
+3. ~~prettier 保留过渡期~~ → 2026-08-29 已移除 prettier（含 `.prettierrc` /
+   `.prettierignore`）：实测 oxfmt 对 json/md/yml 的输出与 prettier 零差异，ignore
+   规则此前已迁移进 `.oxfmtrc.json` 的 `ignorePatterns`，lint-staged 全部交给 oxfmt
 4. CI（若加）跑：`typecheck + lint + test + format:check`
+
+编辑器：VSCode 全局默认 formatter = prettier（读 `.prettierrc`，与 oxfmt 输出一致）。
+命令行格式化/lint 用本仓库 scripts（`pnpm format` / `pnpm lint`，走 node_modules 内的
+oxfmt/oxlint）。若想编辑器内启用 oxfmt + oxlint 实时诊断，装官方 Oxc 扩展
+（`oxc.oxc-vscode`）并在项目 `.vscode/settings.json` 里把 `editor.defaultFormatter`
+设为 `oxc.oxc-vscode` 即可（本项目暂未启用，保留 prettier）。
 
 注意：oxfmt 目前 0.x，大版本未到 1.0，格式输出在后续版本可能微调（有 prettier
 可回退，风险低）。
