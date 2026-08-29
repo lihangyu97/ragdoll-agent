@@ -3,7 +3,7 @@
 > 状态：2025-08-26，渠道抽象（ChannelAdapter）+ agent 契约中立化重构后整理。
 > 本文件是仓库**唯一**的架构文档，由 docs/ 下多份旧文档合并而来（feishu-agent-integration /
 > cordis-migration / agent-capability-design / worker-multi-instance / orm-examples / TODO / lark.json
-> 均已删除）。编码原则见仓库根 `AGENST.md`。
+> 均已删除）。编码原则见仓库根 `AGENTS.md`。
 
 ---
 
@@ -168,7 +168,7 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 
 ## 7. 约定与坑
 
-### 约定（AGENST.md 摘要）
+### 约定（AGENTS.md 摘要）
 
 - **表结构变更直接清库**（`rm -f data/agent.db*` 后 `pnpm seed`），不写迁移逻辑；drizzle 迁移只重建一次（`pnpm db:generate`）
 - **不 commit/push**，除非主动要求

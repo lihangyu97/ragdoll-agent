@@ -13,22 +13,29 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
     "prepare": "simple-git-hooks"
   },
   "simple-git-hooks": {
     "pre-commit": "npx lint-staged"
   },
   "lint-staged": {
-    "*": "prettier --write --ignore-unknown"
+    "*.{ts,js,mjs,cjs,jsx,tsx}": [
+      "oxfmt --write",
+      "oxlint --fix"
+    ],
+    "*.{json,md,yml,yaml}": "oxfmt --write"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.0.0",
     "drizzle-kit": "^0.31.10",
     "lint-staged": "^17.3.0",
-    "prettier": "^3.9.6",
+    "oxfmt": "^0.65.0",
+    "oxlint": "^1.80.0",
     "simple-git-hooks": "^2.13.1",
     "tsx": "^4.20.0",
     "typescript": "^7.0.2"
