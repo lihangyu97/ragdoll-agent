@@ -30,6 +30,7 @@
   config:
     root: !!js process.env.SYSTEM_TOOLS_ROOT ?? 'data/workspace'
     commands: !!js (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean)
+    enableSkillScripts: !!js process.env.ENABLE_SKILL_SCRIPTS === 'true'
 
 - id: agent
   name: ./src/services/agent/AgentService.ts
@@ -41,6 +42,11 @@
 
 - id: agent-demo
   name: ./src/plugins/weather/index.ts
+
+- id: skill-loader
+  name: ./src/plugins/skill-loader.ts
+  config:
+    skillsRoot: !!js process.env.SKILLS_ROOT ?? 'skills'
 
 - id: channel
   name: ./src/services/channel/ChannelService.ts

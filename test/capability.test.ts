@@ -92,7 +92,7 @@ test('full 模式：instructions 全量注入，无 load_skill', async () => {
   assert.deepEqual(domainTools(spec), ['getLocation', 'getWeather'])
 })
 
-test('load_skill 返回技能全文（含 resources）；未知技能返回可恢复提示', async () => {
+test('load_skill：不传 resource 返回说明+文件索引；传 resource 返回文件内容；未知返回可恢复提示', async () => {
   const ctx = await setup()
   ctx.capability.registerTool(fakeTool('getLocation'))
   ctx.capability.registerTool(fakeTool('getWeather'))
@@ -104,11 +104,23 @@ test('load_skill 返回技能全文（含 resources）；未知技能返回可�
 
   const spec = await ctx.capability.assemble()
   const loadSkill = spec.tools.find(t => t.name === 'load_skill')!
+
+  // 不传 resource：说明 + 文件索引，不内联文件内容（渐进披露省 token）
   const text = await loadSkill.invoke({ name: 'weather' })
   assert.ok(text.includes(weather.instructions))
-  assert.ok(text.includes('faq'))
-  assert.ok(text.includes('天气接口偶发超时'))
+  assert.ok(text.includes('- faq'))
+  assert.ok(!text.includes('天气接口偶发超时'))
 
+  // 传 resource：返回文件内容
+  const content = await loadSkill.invoke({ name: 'weather', resource: 'faq' })
+  assert.ok(content.includes('天气接口偶发超时'))
+
+  // 未知文件：可恢复提示（带可用文件列表）
+  const badResource = await loadSkill.invoke({ name: 'weather', resource: 'nope.md' })
+  assert.ok(badResource.includes('没有文件：nope.md'))
+  assert.ok(badResource.includes('faq'))
+
+  // 未知技能：可恢复提示
   const missing = await loadSkill.invoke({ name: 'nope' })
   assert.ok(missing.includes('未找到技能：nope'))
   assert.ok(missing.includes('可用技能：weather'))
@@ -135,6 +147,22 @@ test('personas：具名 prompt 段按顺序拼接；未知段组装抛错', asyn
   await assert.rejects(() => ctx.capability.assemble(), /prompt 不存在: nope/)
 })
 
+test('catalog 注册表驱动：definition 未声明 skills 也列出全部已注册技能 + load_skill；full 仍 opt-in', async () => {
+  const ctx = await setup()
+  ctx.capability.registerSkill({ name: 's1', description: '技能一', instructions: 'i1' })
+  ctx.capability.registerDefinition({ id: 'bare', basePrompt: 'bare base' }) // 不声明 skills
+
+  // catalog 默认：列出全部技能，load_skill 可用（文件技能丢进注册表即可被发现）
+  const spec = await ctx.capability.assemble('bare')
+  assert.ok(spec.systemPrompt.includes('- s1：技能一'))
+  assert.ok(spec.tools.some(t => t.name === 'load_skill'))
+
+  // full 模式保持 opt-in：不声明 skills 就不注入 instructions，也没有 load_skill
+  ctx.capability.registerDefinition({ id: 'bare-full', basePrompt: 'p', skillMode: 'full' })
+  const specFull = await ctx.capability.assemble('bare-full')
+  assert.ok(!specFull.systemPrompt.includes('技能一'))
+  assert.ok(!specFull.tools.some(t => t.name === 'load_skill'))
+})
 test('def.tools 直挂 + skill.tools 引用去重，catalog 仍带 load_skill', async () => {
   const ctx = await setup()
   ctx.capability.registerTool(fakeTool('t1'))
