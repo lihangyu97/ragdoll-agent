@@ -7,6 +7,7 @@ import ThreadsService from '@/services/data/threads/ThreadsService'
 import TurnsService from '@/services/data/turns/TurnsService'
 import ChannelStoreService from '@/services/data/channels/ChannelStoreService'
 import CapabilityService from '@/services/agent/capability/CapabilityService'
+import ProviderService from '@/services/agent/provider/ProviderService'
 import AgentService from '@/services/agent/AgentService'
 import ChannelService from '@/services/channel/ChannelService'
 import LarkAdapter from '@/services/channel/adapters/lark/LarkAdapter'
@@ -51,10 +52,12 @@ app.plugin(CapabilityService, {
   commands: (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean),
   enableSkillScripts: process.env.ENABLE_SKILL_SCRIPTS === 'true'
 })
-app.plugin(AgentService, {
+app.plugin(ProviderService, {
   apiKey: process.env.OPENAI_API_KEY!,
   baseUrl: process.env.OPENAI_BASE_URL!,
-  model: process.env.OPENAI_MODEL ?? 'deepseek-v4-flash',
+  model: process.env.OPENAI_MODEL ?? 'deepseek-v4-flash'
+})
+app.plugin(AgentService, {
   dbPath: process.env.DB_PATH ?? 'data/agent.db'
 })
 app.plugin(weatherAssistant)

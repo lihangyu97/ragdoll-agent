@@ -12,18 +12,18 @@
 学习用的 agent 项目（TypeScript）：渠道消息 → SQLite 队列 → agent 执行 → 出站回复。
 
 - **框架**：cordis 4（koishi 同款 DI + 插件框架）
-- **agent**：langchain（`createAgent` + SqliteSaver checkpointer）；对外契约框架无关（见 §3.2）
+- **agent**：langchain（`createAgent` + SqliteSaver checkpointer）；模型层独立为 provider Service（AgentService 经 `getModel()` 取模型实例）；对外契约框架无关（见 §3.2）
 - **存储**：better-sqlite3 + drizzle-orm（表定义唯一来源 `src/services/data/database/schema.ts`）
 - **配置**：环境变量 → 各 Service `static Config`（zod）校验，缺配置 → 插件 FAILED
 
 ## 2. 四大模块与目录
 
-| 模块                  | 目录                    | 职责                                                                             |
-| --------------------- | ----------------------- | -------------------------------------------------------------------------------- |
-| **出入站**（channel） | `src/services/channel/` | 渠道编排（`ChannelService`）+ 渠道契约（`types.ts`）+ 适配器（`adapters/lark/`） |
-| **调用器**（worker）  | `src/services/worker/`  | 轮询队列、路由归属、执行编排、出站回复                                           |
-| **agent**             | `src/services/agent/`   | 能力注册表（`capability/`，数据面）+ 执行（`AgentService`，执行面）              |
-| **持久化**（data）    | `src/services/data/`    | `database` + `traces` / `threads` / `turns` / `channels` repository              |
+| 模块                  | 目录                    | 职责                                                                                       |
+| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------ |
+| **出入站**（channel） | `src/services/channel/` | 渠道编排（`ChannelService`）+ 渠道契约（`types.ts`）+ 适配器（`adapters/lark/`）           |
+| **调用器**（worker）  | `src/services/worker/`  | 轮询队列、路由归属、执行编排、出站回复                                                     |
+| **agent**             | `src/services/agent/`   | 模型层（`provider/`）+ 能力注册表（`capability/`，数据面）+ 执行（`AgentService`，执行面） |
+| **持久化**（data）    | `src/services/data/`    | `database` + `traces` / `threads` / `turns` / `channels` repository                        |
 
 ```
                  ┌──────────────────────────────────────────────┐
@@ -41,7 +41,8 @@
                                 ▼
                  ┌──────────────────────────────────────────────┐
                  │ agent                                         │
-                 │  AgentService（执行面）+ capability（注册表/组装）│
+                 │  AgentService（执行面）+ provider（模型层）    │
+                 │  + capability（注册表/组装）                   │
                  └──────────────┬───────────────────────────────┘
                                 │ repository 调用
                                 ▼
@@ -136,6 +137,7 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 
 - 新增 definition（`registerDefinition`）+ 工具（`registerTool`）+ skill（`registerSkill`）即可，见 §5.3
 - 换框架：改动收敛在 `src/services/agent/` 内部（事件载荷已中立）；真换时把 AgentService 内部拆成 backend 适配层即可，worker/观测层无感知
+- 换模型 / 多模型：改动收敛在 `provider/`（模型配置与客户端构造），AgentService 只消费 `getModel()`；需要 per-definition 模型时给 `getModel` 加名字参数即可
 - 注意：tool 契约目前仍是 langchain `ClientTool`（唯一实现，不做投机抽象）；checkpointer（langgraph 记忆）在框架内部
 
 ### 新能力（工具 / skill / definition）
@@ -154,7 +156,7 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 
 - [ ] `registerKnowledge` + `knowledge_search`（SQLite FTS5，不上向量库）
 - [ ] `agent/before-input` waterfall（输入改写/拦截）+ 工具白名单
-- [ ] 事件 payload 补 token 用量/耗时；model 配置挪进 AgentDefinition
+- [ ] 事件 payload 补 token 用量/耗时；model 配置挪进 AgentDefinition（模型层已抽 provider，此处只剩 definition → 模型名的映射）
 
 ### P2：渠道插拔验证 + agent backend
 
