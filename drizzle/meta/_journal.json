@@ -15,6 +15,13 @@
       "when": 1787820974714,
       "tag": "0001_bright_crusher_hogan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788009761838,
+      "tag": "0002_peaceful_vin_gonzales",
+      "breakpoints": true
     }
   ]
 }
