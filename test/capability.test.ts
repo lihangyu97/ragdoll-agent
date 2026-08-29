@@ -209,7 +209,7 @@ test('重复注册抛错；unregister 缺失抛错', async () => {
   assert.throws(() => ctx.capability.unregisterDefinition('nope'), /definition 不存在: nope/)
 })
 
-test('unregister 后 assemble 引用缺失抛错', async () => {
+test('unregister 后 assemble：skill 缺失仍抛错，工具缺失跳过不崩', async () => {
   const ctx = await setup()
   ctx.capability.registerTool(fakeTool('getLocation'))
   ctx.capability.registerSkill(weather)
@@ -220,7 +220,8 @@ test('unregister 后 assemble 引用缺失抛错', async () => {
 
   ctx.capability.registerSkill(weather)
   ctx.capability.unregisterTool('getLocation')
-  await assert.rejects(() => ctx.capability.assemble(), /tool 不存在: getLocation/)
+  const spec = await ctx.capability.assemble()
+  assert.ok(!domainTools(spec).includes('getLocation'))
 })
 
 test('version 随注册/注销递增', async () => {
@@ -266,4 +267,40 @@ test('waterfall 改写点：插件可在组装期追加 systemPrompt', async () 
 
   const spec = await ctx.capability.assemble()
   assert.ok(spec.systemPrompt.endsWith('[plugin-suffix]'))
+})
+
+test('存在性校验：def/skill 引用未注册工具 → 跳过不崩（多渠道场景缺渠道插件）', async () => {
+  const ctx = await setup()
+  ctx.capability.registerTool(fakeTool('exists'))
+  ctx.capability.registerSkill({
+    name: 's1',
+    description: 'd',
+    instructions: 'i',
+    tools: ['exists', 'ghost_tool']
+  })
+  ctx.capability.registerDefinition({
+    id: 'def1',
+    basePrompt: 'p',
+    skills: ['s1'],
+    tools: ['exists', 'fetch_image']
+  })
+
+  const spec = await ctx.capability.assemble('def1')
+  const names = domainTools(spec)
+  assert.ok(names.includes('exists'))
+  assert.ok(!names.includes('ghost_tool'))
+  assert.ok(!names.includes('fetch_image'))
+})
+
+test('查询 API：hasTool / listToolNames / listSkillNames', async () => {
+  const ctx = await setup()
+  ctx.capability.registerTool(fakeTool('getLocation'))
+  ctx.capability.registerSkill(weather)
+
+  assert.equal(ctx.capability.hasTool('getLocation'), true)
+  assert.equal(ctx.capability.hasTool('nope'), false)
+  assert.deepEqual(ctx.capability.listToolNames(), ['getLocation'])
+  // 系统工具是平台原语，不参与名字引用，不入列
+  assert.ok(!ctx.capability.listToolNames().includes('read_file'))
+  assert.deepEqual(ctx.capability.listSkillNames(), ['weather'])
 })

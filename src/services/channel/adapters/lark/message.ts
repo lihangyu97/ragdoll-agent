@@ -68,6 +68,15 @@ function replaceMentions(text: string, mentions?: LarkMention[]): string {
   return sorted.reduce((acc, m) => acc.split(m.key).join(`@${m.name}`), text)
 }
 
+/**
+ * 图片占位符：带渠道 + message_id + image_key，供 fetch_image 类工具复制参数。
+ * image_key 只在所属渠道内有效（飞书的 key 换不来 telegram 的图），渠道标识防跨渠道混淆。
+ */
+function imagePlaceholder(imageKey: string | undefined, messageId: string): string {
+  if (!imageKey) return '[图片]'
+  return `[图片 channel=lark message_id=${messageId} image_key=${imageKey}]`
+}
+
 /** 解析消息 content（文本消息是 JSON 字符串，形如 {"text":"..."}，提及 key 会替换成 @名字） */
 export function parseTextContent(content: string, mentions?: LarkMention[]): string {
   try {
@@ -78,8 +87,8 @@ export function parseTextContent(content: string, mentions?: LarkMention[]): str
   }
 }
 
-/** post 单个元素 → 文本 */
-function postElementToText(el: PostElement): string {
+/** post 单个元素 → 文本（messageId 进图片占位符，取图接口需要 message_id + file_key） */
+function postElementToText(el: PostElement, messageId: string): string {
   switch (el.tag) {
     case 'text':
     case 'a':
@@ -89,7 +98,7 @@ function postElementToText(el: PostElement): string {
     case 'mention':
       return el.user_name ? `@${el.user_name}` : '@'
     case 'img':
-      return '[图片]'
+      return imagePlaceholder(el.image_key, messageId)
     case 'media':
       return '[视频]'
     case 'file':
@@ -109,7 +118,7 @@ function postElementToText(el: PostElement): string {
  * 解析 post（富文本）消息 content 为纯文本。
  * 优先取 content_v2（新格式），没有则退回 content；每行元素拼接，行间换行，标题在最前。
  */
-export function parsePostContent(content: string): string {
+export function parsePostContent(content: string, messageId: string): string {
   let data: PostContent
   try {
     data = JSON.parse(content) as PostContent
@@ -117,21 +126,36 @@ export function parsePostContent(content: string): string {
     return content
   }
   const lines = data.content_v2 ?? data.content ?? []
-  const body = lines.map(line => line.map(el => postElementToText(el)).join('')).join('\n')
+  const body = lines
+    .map(line => line.map(el => postElementToText(el, messageId)).join(''))
+    .join('\n')
   return data.title ? `${data.title}\n${body}` : body
 }
 
-/** 按消息类型把 content 解析为纯文本（当前支持 text / post，其余类型原样返回） */
+/** image 消息 content → 图片占位符（解析失败原样返回） */
+export function parseImageContent(content: string, messageId: string): string {
+  try {
+    const imageKey = (JSON.parse(content) as { image_key?: string }).image_key
+    return imageKey ? imagePlaceholder(imageKey, messageId) : content
+  } catch {
+    return content
+  }
+}
+
+/** 按消息类型把 content 解析为纯文本（当前支持 text / post / image，其余类型原样返回） */
 export function parseMessageContent(msg: LarkMessage): string {
   const messageType = msg.message.message_type
   const content = msg.message.content
   const mentions = msg.message.mentions
+  const messageId = msg.message.message_id
 
   switch (messageType) {
     case 'text':
       return parseTextContent(content, mentions)
     case 'post':
-      return parsePostContent(content)
+      return parsePostContent(content, messageId)
+    case 'image':
+      return parseImageContent(content, messageId)
     default:
       return content
   }

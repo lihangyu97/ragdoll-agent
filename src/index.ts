@@ -14,6 +14,7 @@ import LarkAdapter from '@/services/channel/adapters/lark/LarkAdapter'
 import WorkerService from '@/services/worker/WorkerService'
 import channelLark from '@/plugins/channel-lark'
 import weatherAssistant from '@/plugins/weather'
+import larkImage from '@/plugins/lark-image'
 import skillLoader from '@/plugins/skill-loader'
 import worker from '@/plugins/worker'
 import turnRecorder from '@/plugins/turn-recorder'
@@ -61,6 +62,7 @@ app.plugin(AgentService, {
   dbPath: process.env.DB_PATH ?? 'data/agent.db'
 })
 app.plugin(weatherAssistant)
+app.plugin(larkImage)
 app.plugin(skillLoader, { skillsRoot: process.env.SKILLS_ROOT ?? 'skills' })
 app.plugin(ChannelService, { thinkingReply: '🤔 正在思考中…' })
 app.plugin(LarkAdapter, {

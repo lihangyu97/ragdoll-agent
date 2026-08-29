@@ -1,10 +1,13 @@
 import type { Skill } from '@/services/agent/capability/CapabilityService'
 
+/** weather skill 的注册名（definition 按此名引用） */
+export const WEATHER_SKILL = 'weather'
+
 /**
  * weather skill：toy 演示技能（原 toy/systemPrompt 的工作流迁入 instructions）。
  */
 const weatherSkill: Skill = {
-  name: 'weather',
+  name: WEATHER_SKILL,
   description: '查询当前天气：获取用户所在城市、天气状况与温度',
   trigger: '天气、气温',
   instructions: `查询天气时按以下工作流执行：
