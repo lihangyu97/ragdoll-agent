@@ -169,7 +169,7 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 ### 设计储备：langgraph interrupt / resume（人工审批 / 对话暂停）
 
 > 2026-08-29 调研结论（仓库内 langgraph 1.4.10，`interrupt` / `Command` API 已具备）。
-> 触发场景：P1 guardrails 的高危工具审批、未来的对话暂停。**当前未实施**。
+> 触发场景：P1 guardrails 的高危工具审批、对话暂停恢复。**方案已定稿（2026-08-30），未实施**。
 
 **核心机制**：图执行中调用 `interrupt(payload)` 会抛特殊的 `GraphInterrupt`（不是错误），langgraph 捕获后把整张图的执行状态写进 checkpointer 并正常返回——进程此后可直接死掉，状态在 SQLite 里不丢。恢复时对同一 `thread_id` 传 `new Command({ resume: value })`（而非新消息），langgraph 加载 checkpoint 回到挂起节点。
 
@@ -180,14 +180,33 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 1. **人工审批（设计初衷）**：高危工具执行前 interrupt 问人，用户确认后 resume 继续。guardrails 的天然实现路径，无需自建审批协议。
 2. **跨进程崩溃恢复**：interrupt/resume **不会自动续跑**——挂起后必须有存活方主动 resume。调度部分仍归心跳租约（sweep 重派），它只提供"状态没丢、可精确续跑"的能力。
 
-**真要做要动的四处**：
+**实施方案（2026-08-30 定稿，待实施）**：
 
-1. run 收尾判断：`agent.stream` 结束后用 `agent.getState()` 查 tasks 是否挂起 interrupt（不是解析流事件）；挂起 → trace 不标 DONE、不回复，"有断点"落库（`agent_threads` 加状态列）
-2. 重派分叉：worker 领取重置回 pending 的 trace 时，先查 thread 有无挂起断点——有走 `Command.resume`，没有才走现在的整轮重跑
-3. 审批触发者路由（审批场景最大的一块胶水）：thread 有挂起审批时，用户下一条消息不是新任务，而是 resume 的值（yes/no），消息入口要加这层判别
-4. 观测层：resume 产生的事件流没有新 `agent/input`，turn-recorder 轮次要能对上
+**前提——最小触发器**：仓库目前无任何 `interrupt()` 调用，只做基建则挂起分支是死代码。先加 `ask_human` 系统工具（`systemTools.ts`，实现即 `interrupt({ question, options })`，interrupt 返回值 = 用户答复，直接作为工具结果回给模型），作为触发器兼验证载体。将来 guardrails 高危审批换 `HumanInTheLoopMiddleware`（langchain 1.x createAgent 官方支持，内部同机制），基建零改动。`interrupt()` 放工具第一行，无副作用，规避重放问题。
 
-**现阶段结论**：崩溃恢复继续交给租约（重跑代价小）；做 guardrails 时以审批身份引入 interrupt，对话暂停是其自然延伸。当前不实施。
+**数据模型**：`agent_threads` 加一列 `suspendPayload`（text，nullable，挂起时写 interrupt payload JSON，恢复/取消时清空，**非空即挂起**）。不动 `status` 列（ACTIVE/INACTIVE 是启用语义，与"运行中挂起"正交）。
+
+**trace 加 `SUSPENDED` 状态**（关键决策，调研稿只说"不标 DONE"是不够的）：保持 processing 会被租约 90s 回收重跑挂起轮；标 done 则用户收不到 question。`suspended` 天然不被 sweep/claim 碰（只认 pending）——挂起是"在等人"，本不该被重派，崩溃恢复语义自洽。
+
+**四处改动落成文件**：
+
+1. run 收尾（`AgentService.run`）：stream 循环结束后 `agent.getState()` 查 tasks 挂起 interrupt（不解析流事件）；返回值 `string | null` 改判别联合 `{ status: 'done' | 'suspended', answer?, question? }`；挂起时写 `suspendPayload` + emit `agent/suspend`（turn-recorder 记 `SUSPEND` hook）+ trace 标 suspended + 回复 question
+2. resume 分叉（`WorkerService.process` 开头）：查 `thread.suspendPayload` 非空 → `agent.stream(new Command({ resume: inputText }))`（输入是 Command 非 HumanMessage），事件管线全复用；**跳过路由**（resolveAgentId 的规则层/LLM 识别都不走，挂起前 thread 必已绑定 agent）；完成后清空 suspendPayload、正常 DONE + 回复
+3. 观测层：**resume 开新轮**（正常分配新 turnNo、正常 emit agent/input，INPUT 内容前缀 `[resume]`），挂起轮与恢复轮在 `agent_turns` 各自完整，turn-recorder 零改动
+4. lark 按钮（用户下一条消息的卡片形态）：SDK 长连接支持 `card.action.trigger`（已核 `RawCardActionEvent`：`operator.open_id` / `action.value` / `context.open_message_id`，**无 thread_id**）
+
+**lark 卡片按钮**：
+
+- `OutboundReply` 加可选 `card` 字段，`send` 发 `msg_type: 'interactive'`；卡片内容取自 suspendPayload 的 `{ question, options }`，无 options 则回纯文本
+- 按钮 value 嵌上下文：`{ "resume": "yes", "threadId": "lark:p2p:oc_xxx" }`——点击事件没有 thread_id（群话题拿不到），嵌进 value 免反查
+- adapter 注册 `card.action.trigger` → 归一化 InboundMessage：threadId ← 按钮 value；text ← resume 值；senderId ← operator.open_id；合成幂等键 messageId = `card:${open_message_id}:${operator.open_id}`（同一人同一卡连点/WS 重推在 channel_messages 唯一索引处判重）→ 走现有 dispatch 管线
+- 点击回执给 toast 即可；"点击后按钮置灰"需留存卡片 message_id 做卡片更新，第一版不做
+- 过期点击：旧卡片点击入队后 thread 已无挂起 → worker 识别出按钮 payload 结构（固定 JSON）直接标 done 忽略，不当新任务发给 agent
+- 取消场景不专门做：挂起后用户回"算了"，文本直接作为 resume 值进模型自行理解
+
+**实施顺序**：① schema 加 suspendPayload（清库 + `pnpm db:generate`）→ ② TracesService 加 SUSPENDED（不参与 sweep/claim，单测）→ ③ ask_human 工具 + run 挂起检测与返回值改造（测试 interrupt 抛出 / getState 判别）→ ④ worker resume 分叉 + 挂起收尾（集成测试：挂起 → resume → DONE 事件序列）→ ⑤ lark 卡片与按钮 → 回归现有队列/租约测试。
+
+普通回复 markdown 卡片化（改 send 消息类型 + 卡片模板）与本方案无耦合，后续单独做。
 
 ## 7. 约定与坑
 
