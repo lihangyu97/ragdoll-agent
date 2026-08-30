@@ -37,7 +37,8 @@ const AGENT_RUN_TIMEOUT_MS = 5 * 60_000
 
 /** 路由识别（identify）的结构化输出 */
 const IDENTIFY_SCHEMA = z.object({
-  agentId: z.string().nullable().describe('选中的 agent definition id；无法确定时返回 null')
+  agentId: z.string().nullable().describe('选中的 agent definition id；无法确定时返回 null'),
+  reason: z.string().describe('一句话说明选择该助手（或无法判断）的原因')
 })
 
 export default class AgentService extends Service {
@@ -143,10 +144,11 @@ export default class AgentService extends Service {
 
   /**
    * 路由识别（agentClient）：判断一条未绑定 thread 的消息该交给哪个 agent。
-   * 轻量无状态 router：无 checkpointer、无系统工具，withStructuredOutput 强制 {agentId | null}。
+   * 轻量无状态 router：无 checkpointer、无系统工具，withStructuredOutput 强制 {agentId, reason}。
    * 识别失败/超时 → null（调用方降级 default）；agentId 合法性由调用方用 capability.hasDefinition 校验。
    */
-  async identify(input: string): Promise<string | null> {
+  /** 路由识别结果：agentId + 模型给出的选择原因（agentId 为 null 时 reason 说明无法判断的原因） */
+  async identify(input: string): Promise<{ agentId: string | null; reason: string } | null> {
     const definitions = this.ctx.capability.listDefinitions()
     const catalog = definitions
       .map(d => `- ${d.id}：${d.basePrompt.split('\n')[0]?.slice(0, 80) ?? ''}`)
@@ -155,8 +157,9 @@ export default class AgentService extends Service {
     const system = new SystemMessage(
       `你是 agent 路由器，只输出 JSON。根据用户消息判断该交给哪个助手处理。\n可用助手：\n${catalog}\n` +
         '规则：\n1. 根据用户意图选择最合适的助手 id；\n' +
-        '2. 无法确定、或不需要任何助手时返回 null。\n' +
-        '输出格式：{"agentId": "助手 id 或 null"}，不要解释。'
+        '2. 无法确定、或不需要任何助手时返回 null；\n' +
+        '3. 同时用一句话说明你的判断原因（reason 字段）。\n' +
+        '输出格式：{"agentId": "助手 id 或 null", "reason": "原因"}，不要其它解释。'
     )
     const human = new HumanMessage(`用户消息：${input}`)
 
@@ -167,7 +170,7 @@ export default class AgentService extends Service {
         .getModel()
         .withStructuredOutput(IDENTIFY_SCHEMA, { method: 'jsonMode' })
       const result = await classifier.invoke([system, human])
-      return result.agentId
+      return result
     } catch (err) {
       logger.warn('[agent] 路由识别失败，降级 null: ', stringify(err))
       return null

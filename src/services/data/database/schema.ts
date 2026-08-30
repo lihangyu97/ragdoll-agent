@@ -108,6 +108,8 @@ export const agentThreads = sqliteTable('agent_threads', {
   senderId: text('sender_id'),
   /** 绑定的 agent definition id（null = 未识别，worker process 首次消费时路由并标记） */
   agentId: text('agent_id'),
+  /** 最近一次路由到 agentId 的原因（模型识别解释 / 规则命中 / 沿用绑定），null = 尚未路由 */
+  agentReason: text('agent_reason'),
   status: text('status').notNull().default(THREAD_STATUS.ACTIVE),
   createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`),
   updatedAt: text('updated_at').default(sql`(datetime('now', 'localtime'))`)

@@ -83,6 +83,16 @@ app.plugin(turnRecorder)
 app.plugin(panel, { port: Number(process.env.RAGDOLL_PANEL_PORT ?? 3111) })
 // app.plugin(output)
 
+// 启动时打印挂载的 agent 目录。skill-loader 的 apply 是异步的，但 definition 注册
+// （weather 插件）是同步 apply，退一个 macrotask 打印即可保证收齐
+setTimeout(() => {
+  const defs = app.capability.listDefinitions()
+  const lines = defs
+    .map(d => `  - ${d.id.padEnd(12)} ${d.basePrompt.split('\n')[0]?.slice(0, 60) ?? ''}`)
+    .join('\n')
+  console.log(`[app] 已挂载 ${defs.length} 个 agent definition：\n${lines}`)
+}, 0)
+
 let closing = false
 const close = async () => {
   if (closing) process.exit(1) // 第二次信号：优雅退出被卡住时强制退出
