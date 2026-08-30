@@ -18,6 +18,7 @@ import WorkerService from '@/services/worker/WorkerService'
 // - src/plugins/*：基础设施插件（channel、panel、worker 等与具体 agent 无关的胶水）
 import channelLark from '@/plugins/channel-lark'
 import weatherAssistant from '@/agents/weather'
+import homeAssistant from '@/agents/home'
 import larkImage from '@/plugins/lark-image'
 import skillLoader from '@/plugins/skill-loader'
 import worker from '@/plugins/worker'
@@ -68,6 +69,7 @@ app.plugin(AgentService, {
   dbPath: process.env.RAGDOLL_DB_PATH ?? 'data/agent.db'
 })
 app.plugin(weatherAssistant)
+app.plugin(homeAssistant)
 app.plugin(larkImage)
 app.plugin(skillLoader, { skillsRoot: process.env.RAGDOLL_SKILLS_ROOT ?? 'skills' })
 app.plugin(ChannelService, { thinkingReply: '🤔 正在思考中…' })
