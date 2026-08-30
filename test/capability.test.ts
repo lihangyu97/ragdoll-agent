@@ -58,11 +58,13 @@ const weatherDef: AgentDefinition = {
   skills: ['weather']
 }
 
-test('未注册任何能力：assemble 走内置默认定义（基础 prompt + 系统工具）', async () => {
+test('未注册任何能力：assemble 走内置默认定义（纯聊天：prompt + 零工具）', async () => {
   const ctx = await setup()
+  ctx.capability.registerSkill(weather) // 有已注册技能也不应进 default 的目录/工具
   const spec = await ctx.capability.assemble()
   assert.ok(spec.systemPrompt.includes('helpful assistant'))
-  assert.deepEqual(domainTools(spec), [])
+  assert.ok(!spec.systemPrompt.includes('可用技能')) // 不注入技能目录
+  assert.deepEqual(spec.tools, []) // chatOnly：系统工具与 load_skill 均不注入
 })
 
 test('catalog 模式：技能目录注入 + load_skill 工具', async () => {

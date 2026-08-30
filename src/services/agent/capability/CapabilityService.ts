@@ -59,6 +59,8 @@ export interface AgentDefinition {
   /** catalog：只注入技能目录 + load_skill 懒加载（默认）；full：instructions 全量编译进 prompt */
   skillMode?: 'catalog' | 'full'
   tools?: string[]
+  /** 纯聊天 agent：不注入系统工具、技能目录与 load_skill，只有 prompt，没有任何工具 */
+  chatOnly?: boolean
 }
 
 /** 组装产物：agent 运行时按此快照构建 langchain agent */
@@ -67,11 +69,12 @@ export interface AgentSpec {
   tools: ClientTool[]
 }
 
-/** 内置默认定义兜底：不注册任何 definition 也能 assemble('default') */
+/** 内置默认定义兜底：不注册任何 definition 也能 assemble('default')。纯聊天，无任何工具 */
 const DEFAULT_DEFINITION: AgentDefinition = {
   id: 'default',
   basePrompt: 'You are a helpful assistant. Always reply in Chinese (中文).',
-  skillMode: 'catalog'
+  skillMode: 'catalog',
+  chatOnly: true
 }
 
 /** run_skill_script 可执行脚本的解释器白名单（按扩展名） */
@@ -268,7 +271,7 @@ export default class CapabilityService extends Service {
         const skill = this.getSkill(name)
         parts.push(`## 技能：${skill.name}\n\n${skill.instructions}`)
       }
-    } else if (this.skills.size > 0) {
+    } else if (this.skills.size > 0 && !def.chatOnly) {
       // catalog 模式注册表驱动：列出全部已注册技能（代码注册 + 文件技能），
       // 往 skills/ 丢一个技能即对所有 catalog 模式的 agent 可发现（load_skill 同源）
       const lines = ['## 可用技能\n\n需要时调用 load_skill(name) 加载技能详细说明：']
@@ -286,6 +289,9 @@ export default class CapabilityService extends Service {
   }
 
   private collectTools(def: AgentDefinition): ClientTool[] {
+    // 纯聊天 agent：零工具（系统工具、技能目录/load_skill、直挂 tools 全部跳过）
+    if (def.chatOnly) return []
+
     const tools: ClientTool[] = []
     const seen = new Set<string>()
     const add = (t: ClientTool) => {
