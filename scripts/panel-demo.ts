@@ -88,7 +88,9 @@ db.insert(agentTurns)
     turnNo: 1,
     hookType: 'TOOL_CALL',
     node: 'llm',
-    toolCalls: JSON.stringify([{ id: 'call_1', name: 'weather_query', args: { city: '北京' } }])
+    toolCallId: 'call_1',
+    toolName: 'weather_query',
+    args: JSON.stringify({ city: '北京' })
   })
   .run()
 db.insert(agentTurns)

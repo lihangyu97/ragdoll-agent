@@ -17,11 +17,13 @@ CREATE TABLE `agent_traces` (
 	`channel` text,
 	`input_text` text NOT NULL,
 	`status` text DEFAULT 'pending' NOT NULL,
+	`heartbeat_at` text,
 	`created_at` text DEFAULT (datetime('now', 'localtime')),
 	`updated_at` text DEFAULT (datetime('now', 'localtime')),
 	FOREIGN KEY (`thread_id`) REFERENCES `agent_threads`(`thread_id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE INDEX `agent_traces_status_created_at` ON `agent_traces` (`status`,`created_at`);--> statement-breakpoint
 CREATE TABLE `agent_turns` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`thread_id` text NOT NULL,
@@ -29,12 +31,14 @@ CREATE TABLE `agent_turns` (
 	`hook_type` text NOT NULL,
 	`node` text,
 	`tool_call_id` text,
-	`tool_calls` text,
+	`tool_name` text,
+	`args` text,
 	`content` text,
 	`tools_result` text,
 	`created_at` text DEFAULT (datetime('now', 'localtime'))
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `agent_turns_thread_turn_input` ON `agent_turns` (`thread_id`,`turn_no`) WHERE hook_type = 'INPUT';--> statement-breakpoint
 CREATE TABLE `channel_messages` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`channel` text NOT NULL,
@@ -49,6 +53,7 @@ CREATE TABLE `channel_messages` (
 	`created_at` text DEFAULT (datetime('now', 'localtime'))
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `channel_messages_channel_message_id` ON `channel_messages` (`channel`,`message_id`);--> statement-breakpoint
 CREATE TABLE `channel_users` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`channel` text NOT NULL,

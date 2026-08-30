@@ -1,5 +1,6 @@
 import type { Context } from 'cordis'
 import logger from '@/utils/logger'
+import { TURN_HOOK } from '@/services/data/database/schema'
 
 /**
  * turn-recorder 插件：订阅 agent/* 事件，把每轮执行的输入/决策/结果/回复/失败/超时写入 agent_turns。
@@ -18,7 +19,7 @@ export default {
         ctx.turns.insertTurn({
           threadId,
           turnNo,
-          hookType: 'INPUT',
+          hookType: TURN_HOOK.INPUT,
           content: input
         })
       } catch (err) {
@@ -31,20 +32,25 @@ export default {
     })
 
     ctx.on('agent/tool-call', ({ threadId, turnNo, node, toolCalls }) => {
-      ctx.turns.insertTurn({
-        threadId,
-        turnNo,
-        hookType: 'TOOL_CALL',
-        node,
-        toolCalls: JSON.stringify(toolCalls)
-      })
+      // 一次响应可含多个并行调用：一次调用一行（带 toolCallId），与 TOOL_RESULT 行等值关联
+      ctx.turns.insertTurns(
+        toolCalls.map(call => ({
+          threadId,
+          turnNo,
+          hookType: TURN_HOOK.TOOL_CALL,
+          node,
+          toolCallId: call.id,
+          toolName: call.name,
+          args: JSON.stringify(call.args)
+        }))
+      )
     })
 
     ctx.on('agent/tool-result', ({ threadId, turnNo, node, toolCallId, text }) => {
       ctx.turns.insertTurn({
         threadId,
         turnNo,
-        hookType: 'TOOL_RESULT',
+        hookType: TURN_HOOK.TOOL_RESULT,
         node,
         toolCallId,
         toolsResult: text
@@ -55,7 +61,7 @@ export default {
       ctx.turns.insertTurn({
         threadId,
         turnNo,
-        hookType: 'AGENT_RESULT',
+        hookType: TURN_HOOK.AGENT_RESULT,
         node,
         content: text
       })
@@ -65,7 +71,7 @@ export default {
       ctx.turns.insertTurn({
         threadId,
         turnNo,
-        hookType: 'ERROR',
+        hookType: TURN_HOOK.ERROR,
         content: error
       })
     })
@@ -74,7 +80,7 @@ export default {
       ctx.turns.insertTurn({
         threadId,
         turnNo,
-        hookType: 'TIMEOUT'
+        hookType: TURN_HOOK.TIMEOUT
       })
     })
   }

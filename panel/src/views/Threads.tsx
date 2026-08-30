@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type ThreadRow, type TurnRow } from '../api'
 import { Badge, Card, Empty, Json } from '../components/ui'
@@ -15,12 +15,23 @@ const HOOK_LABELS: Record<string, { label: string; tone: string }> = {
 
 function TurnEntry({ turn }: { turn: TurnRow }) {
   const meta = HOOK_LABELS[turn.hookType] ?? { label: turn.hookType, tone: 'text-zinc-400' }
-  const isJson = turn.hookType === 'TOOL_CALL' || turn.hookType === 'TOOL_RESULT'
-  const body = isJson
-    ? (turn.toolCalls ?? turn.toolsResult)
-    : turn.hookType === 'ERROR'
-      ? (turn.content ?? '(无内容)')
-      : turn.content
+
+  let body: ReactNode
+  if (turn.hookType === 'TOOL_CALL') {
+    body = (
+      <>
+        <div className="text-zinc-200">{turn.toolName ?? '(未知工具)'}</div>
+        <Json text={turn.args} />
+      </>
+    )
+  } else if (turn.hookType === 'TOOL_RESULT') {
+    body = <Json text={turn.toolsResult} />
+  } else {
+    body =
+      turn.hookType === 'ERROR'
+        ? (turn.content ?? '(无内容)')
+        : turn.content || <span className="text-zinc-600">-</span>
+  }
 
   return (
     <div className="flex gap-3 border-t border-zinc-800/60 py-2 first:border-0">
@@ -29,7 +40,7 @@ function TurnEntry({ turn }: { turn: TurnRow }) {
         {turn.node ?? ''}
       </span>
       <div className="min-w-0 flex-1 font-mono text-xs whitespace-pre-wrap break-words text-zinc-300">
-        {isJson ? <Json text={body ?? null} /> : body || <span className="text-zinc-600">-</span>}
+        {body}
       </div>
     </div>
   )

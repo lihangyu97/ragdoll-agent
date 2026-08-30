@@ -25,6 +25,19 @@ export const THREAD_STATUS = {
 
 export type ThreadStatus = (typeof THREAD_STATUS)[keyof typeof THREAD_STATUS]
 
+/** agent_turns.hook_type 取值：一轮执行内的事件类型 */
+export const TURN_HOOK = {
+  /** 用户输入，开轮 */
+  INPUT: 'INPUT',
+  TOOL_CALL: 'TOOL_CALL',
+  TOOL_RESULT: 'TOOL_RESULT',
+  AGENT_RESULT: 'AGENT_RESULT',
+  ERROR: 'ERROR',
+  TIMEOUT: 'TIMEOUT'
+} as const
+
+export type TurnHook = (typeof TURN_HOOK)[keyof typeof TURN_HOOK]
+
 /* ===== 表定义（唯一事实来源；drizzle-kit generate 生成迁移） ===== */
 
 /** 渠道消息（通用，所有渠道共用；渠道专属字段进 extra JSON） */
@@ -68,10 +81,13 @@ export const agentTurns = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     threadId: text('thread_id').notNull(),
     turnNo: integer('turn_no').notNull(),
-    hookType: text('hook_type').notNull(),
+    hookType: text('hook_type').notNull().$type<TurnHook>(),
     node: text('node'),
+    /** TOOL_CALL / TOOL_RESULT 共用：一次工具调用一行 call + 一行 result，等值关联键 */
     toolCallId: text('tool_call_id'),
-    toolCalls: text('tool_calls'),
+    /** TOOL_CALL 专用：工具名与参数 JSON */
+    toolName: text('tool_name'),
+    args: text('args'),
     content: text('content'),
     toolsResult: text('tools_result'),
     createdAt: text('created_at').default(sql`(datetime('now', 'localtime'))`)
@@ -80,6 +96,7 @@ export const agentTurns = sqliteTable(
   t => [
     uniqueIndex('agent_turns_thread_turn_input')
       .on(t.threadId, t.turnNo)
+      // DDL 里没法引用 JS 常量，值需与 TURN_HOOK.INPUT 保持一致
       .where(sql`hook_type = 'INPUT'`)
   ]
 )

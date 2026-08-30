@@ -12,7 +12,8 @@ import {
   agentTraces,
   agentTurns,
   logger,
-  type TraceStatus
+  type TraceStatus,
+  type TurnHook
 } from '../src/services/data/database/schema'
 
 const ctx = new Context()
@@ -54,7 +55,7 @@ function seedTrace(opts: {
 function seedTurn(
   threadId: string,
   turnNo: number,
-  hookType: string,
+  hookType: TurnHook,
   extra: Record<string, unknown> = {}
 ) {
   ctx.database.db
@@ -141,7 +142,7 @@ test('listThreads：按最近活跃排序，带最后一条 trace 的状态与�
 
 test('getTurns：按 turnNo + id 排序返回', () => {
   seedTurn('t1', 1, 'INPUT', { content: '问' })
-  seedTurn('t1', 1, 'TOOL_CALL', { toolCalls: '[{"name":"weather"}]' })
+  seedTurn('t1', 1, 'TOOL_CALL', { toolName: 'weather', args: '{}' })
   seedTurn('t1', 1, 'AGENT_RESULT', { content: '答' })
   seedTurn('t1', 2, 'INPUT', { content: '再问' })
   const turns = ctx.panel.getTurns('t1')

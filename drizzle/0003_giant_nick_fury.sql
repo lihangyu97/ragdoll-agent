@@ -1,1 +1,0 @@
-CREATE INDEX `agent_traces_status_created_at` ON `agent_traces` (`status`,`created_at`);

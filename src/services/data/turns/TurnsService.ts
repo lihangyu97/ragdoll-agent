@@ -1,6 +1,6 @@
 import { Service, type Context } from 'cordis'
 import { and, eq, max } from 'drizzle-orm'
-import { agentTurns } from '@/services/data/database/schema'
+import { agentTurns, TURN_HOOK } from '@/services/data/database/schema'
 
 export type AgentTurnRecord = typeof agentTurns.$inferSelect
 
@@ -30,7 +30,7 @@ export default class TurnsService extends Service {
     const row = this.ctx.database.db
       .select({ max: max(agentTurns.turnNo) })
       .from(agentTurns)
-      .where(and(eq(agentTurns.threadId, threadId), eq(agentTurns.hookType, 'INPUT')))
+      .where(and(eq(agentTurns.threadId, threadId), eq(agentTurns.hookType, TURN_HOOK.INPUT)))
       .get()
     return row?.max ?? 0
   }
@@ -43,5 +43,11 @@ export default class TurnsService extends Service {
   /** 写入一行 turn 记录 */
   insertTurn(record: InsertTurnParams) {
     this.ctx.database.db.insert(agentTurns).values(record).run()
+  }
+
+  /** 批量写入多行 turn 记录（单条 INSERT 多 VALUES） */
+  insertTurns(records: InsertTurnParams[]) {
+    if (records.length === 0) return
+    this.ctx.database.db.insert(agentTurns).values(records).run()
   }
 }
