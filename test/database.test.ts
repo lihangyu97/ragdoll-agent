@@ -1,4 +1,4 @@
-process.env.DB_PATH = ':memory:'
+process.env.RAGDOLL_DB_PATH = ':memory:'
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

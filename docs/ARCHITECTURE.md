@@ -149,8 +149,8 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 
 - `registerTool(tool)`：领域工具（langchain `ClientTool`）；系统工具（read_file/write_file/…，平台原语）构造时 seed，自动进每个 agent，不可同名注册/注销
 - `registerSkill(skill)`：`{ name, description, trigger?, instructions, resources?, tools?, license?, compatibility?, metadata?, scripts? }`；默认 `catalog` 懒加载——**目录注册表驱动**（列出全部已注册技能，`def.skills` 不参与过滤，往 `skills/` 丢技能即对所有 catalog agent 可发现）+ 内置 `load_skill(name)` 工具（支持 `resource` 参数按需加载技能文件，渐进披露对齐 agentskills.io 规范）；`full` 模式保持 opt-in（只编译 `def.skills` 声明的技能 instructions），小技能集可用
-- **文件技能（agentskills.io 标准格式）**：`skill-loader` 插件启动时扫描 `skillsRoot`（默认 `skills`，`SKILLS_ROOT` env）下 `<name>/SKILL.md`（YAML frontmatter + 正文），校验命名/必填后注册进 capability；`references/` `assets/` `scripts/` 下文本文件进 `resources`（scripts 另有 `scripts` 执行索引）；与代码注册同名 → 文件版覆盖。`license`/`compatibility`/`metadata` 为宿主侧字段，存而不渲染（不进 prompt）
-- **技能脚本执行（`run_skill_script`）**：`CapabilityService` 开 `enableSkillScripts`（`ENABLE_SKILL_SCRIPTS=true`）后注入；仅执行 `skills/<name>/scripts/` 白名单索引内的脚本，解释器白名单（bash/sh、python3、node），`execFile` 无 shell 注入面，cwd 限定技能目录 + 超时 + 输出截断；与 `run_command` 同为演示级护栏，真隔离需 OS 沙箱/容器
+- **文件技能（agentskills.io 标准格式）**：`skill-loader` 插件启动时扫描 `skillsRoot`（默认 `skills`，`RAGDOLL_SKILLS_ROOT` env）下 `<name>/SKILL.md`（YAML frontmatter + 正文），校验命名/必填后注册进 capability；`references/` `assets/` `scripts/` 下文本文件进 `resources`（scripts 另有 `scripts` 执行索引）；与代码注册同名 → 文件版覆盖。`license`/`compatibility`/`metadata` 为宿主侧字段，存而不渲染（不进 prompt）
+- **技能脚本执行（`run_skill_script`）**：`CapabilityService` 开 `enableSkillScripts`（`RAGDOLL_ENABLE_SKILL_SCRIPTS=true`）后注入；仅执行 `skills/<name>/scripts/` 白名单索引内的脚本，解释器白名单（bash/sh、python3、node），`execFile` 无 shell 注入面，cwd 限定技能目录 + 超时 + 输出截断；与 `run_command` 同为演示级护栏，真隔离需 OS 沙箱/容器
 - `registerDefinition(def)`：`{ id, basePrompt, personas?, skills?, skillMode?, tools? }` 声明式规格，`assemble(def)` 产出 `AgentSpec`（systemPrompt + tools）
 
 ## 6. 待办与设计储备
@@ -257,7 +257,7 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 
 ### lark（飞书）配置
 
-- 环境变量：`LARK_APP_ID` / `LARK_APP_SECRET` / `LARK_DOMAIN`（`feishu` | `lark`），见 `.env.example`
+- 环境变量：`RAGDOLL_LARK_APP_ID` / `RAGDOLL_LARK_APP_SECRET` / `RAGDOLL_LARK_DOMAIN`（`feishu` | `lark`），见 `.env.example`
 - 应用权限 scopes（开发者后台配置，原 `docs/lark.json`）：
   - tenant：`im:message`、`im:message.p2p_msg:readonly`、`im:message.group_at_msg:readonly`、`im:message.group_at_msg.include_bot:readonly`、`im:message:send_as_bot`、`im:chat`、`contact:contact.base:readonly`、`contact:user.base:readonly`、`im:message.reactions:read` / `write_only`、`im:app_feed_card:write`、`cardkit:card:write`、`docx:*`、`wiki:*`、`drive:*`、`search:bot`
   - user：`contact:user.base:readonly`、`contact:user.email:readonly`、`contact:user.employee_id:readonly`、`docx:*`、`drive:*`、`wiki:*`、`search:bot`

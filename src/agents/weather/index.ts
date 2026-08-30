@@ -16,7 +16,7 @@ export default {
     }
     ctx.capability.registerSkill(weatherSkill)
     ctx.capability.registerDefinition({
-      id: 'default',
+      id: 'weather',
       basePrompt: 'You are a helpful assistant. Always reply in Chinese (中文).',
       skills: [weatherSkill.name],
       // fetch_image 由 lark-image 插件注册；未装该插件时 collectTools 会跳过并 warn，不崩
