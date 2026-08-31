@@ -12,6 +12,7 @@ import type {
   AgentErrorEvent,
   AgentInputEvent,
   AgentResultEvent,
+  AgentSystemPromptInfo,
   AgentTimeoutEvent,
   AgentToolCallEvent,
   AgentToolResultEvent
@@ -29,6 +30,13 @@ declare module 'cordis' {
     'agent/result': (payload: AgentResultEvent) => void
     'agent/error': (payload: AgentErrorEvent) => void
     'agent/timeout': (payload: AgentTimeoutEvent) => void
+    // 运行期改写点（waterfall）：每轮 run 广播基础 systemPrompt，插件可选择改写；
+    // 监听器签名 (prompt, info, next)，调用 next() 取下游结果后再改写，直接返回则短路
+    'agent/system-prompt': (
+      systemPrompt: string,
+      info: AgentSystemPromptInfo,
+      next: () => unknown
+    ) => unknown
   }
 }
 
@@ -49,8 +57,6 @@ export default class AgentService extends Service {
   })
 
   private readonly checkpointer: SqliteSaver
-  /** 按 agentId 的运行时缓存：capability 注册表 version 变更即全部失效，下次 run 重建 */
-  private runtimes = new Map<string, { version: number; agent: ReturnType<typeof createAgent> }>()
 
   constructor(ctx: Context, config: z.infer<typeof AgentService.Config>) {
     super(ctx, 'agent')
@@ -66,33 +72,29 @@ export default class AgentService extends Service {
     return checkpointer
   }
 
-  // 能力注入走 capability 注册表：注册变更 → version 递增 → 下次 run 重建 agent
+  // 每轮组装 + createAgent：systemPrompt 每轮经 agent/system-prompt 钩子改写，不做缓存
   async run(input: string, threadId: string, agentId = 'default'): Promise<string | null> {
     let answer: string | null = null
 
     await threadContext.run(threadId, async () => {
-      const controller = new AbortController()
       // 轮次号在 run 入口算一次，同一轮内所有事件共用（含 error/timeout）
       const turnNo = this.ctx.turns.nextTurnNo(threadId)
+
+      const controller = new AbortController()
       const timer = setTimeout(() => {
         controller.abort()
         this.ctx.emit('agent/timeout', { threadId, turnNo })
       }, AGENT_RUN_TIMEOUT_MS)
 
       try {
-        const agent = await this.ensureAgent(agentId)
         this.ctx.emit('agent/input', { threadId, turnNo, input })
 
-        // todo thread 新增个 system_prompt 字段 这里看看怎么拿到然后写进去
-
-        const stream = await agent.stream(
-          { messages: [new HumanMessage(input)] },
-          {
-            streamMode: 'updates',
-            signal: controller.signal,
-            configurable: { thread_id: threadId }
-          }
-        )
+        const { agent, streamInput } = await this.prepare(input, threadId, agentId, turnNo)
+        const stream = await agent.stream(streamInput, {
+          streamMode: 'updates',
+          signal: controller.signal,
+          configurable: { thread_id: threadId }
+        })
 
         // stream 不是"只有 LLM 输出"——它是 LangGraph 整张图的逐步更新（streamMode:'updates'）。
         // createAgent 的图 = agent 节点（调 LLM）+ tools 节点（执行工具）交替循环：
@@ -143,6 +145,40 @@ export default class AgentService extends Service {
   }
 
   /**
+   * 一轮 stream 的准备：组装基础 prompt（含组装期 agent/prompt-build 改写）→ agent/system-prompt
+   * waterfall 运行期改写 → 按最终 prompt 构建 agent（langchain systemPrompt 构建期定死，每轮
+   * 改写后必须重建；checkpointer 共享，thread 历史不丢）。返回 stream 所需的一切。
+   */
+  private async prepare(
+    input: string,
+    threadId: string,
+    agentId: string,
+    turnNo: number
+  ): Promise<{
+    agent: ReturnType<typeof createAgent>
+    streamInput: { messages: [HumanMessage] }
+  }> {
+    const spec = await this.ctx.capability.assemble(agentId)
+    const systemPrompt = this.ctx.waterfall(
+      'agent/system-prompt',
+      spec.systemPrompt,
+      { threadId, turnNo, agentId, input },
+      () => spec.systemPrompt
+    ) as string
+    const agent = createAgent({
+      model: this.ctx.provider.getModel(),
+      tools: spec.tools,
+      systemPrompt,
+      checkpointer: this.checkpointer
+    })
+
+    return {
+      agent,
+      streamInput: { messages: [new HumanMessage(input)] }
+    }
+  }
+
+  /**
    * 路由识别（agentClient）：判断一条未绑定 thread 的消息该交给哪个 agent。
    * 轻量无状态 router：无 checkpointer、无系统工具，withStructuredOutput 强制 {agentId, reason}。
    * 识别失败/超时 → null（调用方降级 default）；agentId 合法性由调用方用 capability.hasDefinition 校验。
@@ -175,27 +211,5 @@ export default class AgentService extends Service {
       logger.warn('[agent] 路由识别失败，降级 null: ', stringify(err))
       return null
     }
-  }
-
-  private async ensureAgent(agentId: string): Promise<ReturnType<typeof createAgent>> {
-    const version = this.ctx.capability.version
-    const entry = this.runtimes.get(agentId)
-    if (!entry || entry.version !== version) {
-      const spec = await this.ctx.capability.assemble(agentId)
-      // 打一条构建日志便于检查最终生效的 systemPrompt（每个 agent 每版本一次，非每轮）
-      logger.info(
-        `[agent] 构建运行时 systemPrompt（agent=${agentId} version=${version}）:\n${spec.systemPrompt}`
-      )
-      this.runtimes.set(agentId, {
-        version,
-        agent: createAgent({
-          model: this.ctx.provider.getModel(),
-          tools: spec.tools,
-          systemPrompt: spec.systemPrompt,
-          checkpointer: this.checkpointer
-        })
-      })
-    }
-    return this.runtimes.get(agentId)!.agent
   }
 }
