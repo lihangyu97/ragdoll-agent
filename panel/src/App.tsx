@@ -42,10 +42,20 @@ export default function App() {
         </nav>
         <span className="ml-auto font-mono text-xs text-zinc-600">3s 自动刷新</span>
       </header>
-      <main className="min-h-0 flex-1 overflow-y-auto overscroll-none p-6">
-        {tab === 'overview' && <Overview onOpenThread={openThread} />}
-        {tab === 'threads' && <ThreadsView threadId={threadId} onSelect={setThreadId} />}
-        {tab === 'logs' && <LogsView />}
+      <main className="relative min-h-0 flex-1 overflow-hidden">
+        {TABS.map(t => (
+          <div
+            key={t.id}
+            inert={tab === t.id ? undefined : true}
+            className={`absolute inset-0 overflow-y-auto overscroll-none p-6 transition-opacity duration-200 ${
+              tab === t.id ? 'z-10 opacity-100' : 'pointer-events-none z-0 opacity-0'
+            }`}
+          >
+            {t.id === 'overview' && <Overview onOpenThread={openThread} />}
+            {t.id === 'threads' && <ThreadsView threadId={threadId} onSelect={setThreadId} />}
+            {t.id === 'logs' && <LogsView />}
+          </div>
+        ))}
       </main>
     </div>
   )
