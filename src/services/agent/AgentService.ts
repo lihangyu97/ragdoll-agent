@@ -106,6 +106,12 @@ export default class AgentService extends Service {
           for (const [node, update] of Object.entries(step)) {
             for (const msg of update.messages ?? []) {
               if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
+                // “边说边做”的过程话：带 tool_calls 的消息里 content 也可能有文本（如“好的，先看看 xx 文件”），
+                // 也发一条 agent/result 给观测层落库，但它不是最终答案，不更新 answer
+                const talk = typeof msg.content === 'string' ? msg.content : ''
+                if (talk) {
+                  this.ctx.emit('agent/result', { threadId, turnNo, node, text: talk })
+                }
                 this.ctx.emit('agent/tool-call', {
                   threadId,
                   turnNo,

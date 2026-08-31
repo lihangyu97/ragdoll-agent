@@ -45,7 +45,8 @@ export interface AgentToolResultEvent extends AgentEventBase {
   text: string
 }
 
-/** agent/result 事件载荷：一轮非工具消息（最终答案取最后一次非空 text） */
+/** agent/result 事件载荷：非工具消息（最终答案取最后一次非空 text）；
+ *  也广播带 tool_calls 消息里的过程话（“边说边做”的中间文本，不参与最终答案判定） */
 export interface AgentResultEvent extends AgentEventBase {
   node: string
   text: string
