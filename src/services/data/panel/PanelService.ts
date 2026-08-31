@@ -1,5 +1,5 @@
 import { Service, type Context } from 'cordis'
-import { and, desc, eq, sql, type SQL } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, lte, sql, type SQL } from 'drizzle-orm'
 import {
   agentThreads,
   agentTraces,
@@ -66,6 +66,18 @@ export interface LogQuery {
   level?: string | undefined
   threadId?: string | undefined
   limit?: number | undefined
+  /** 只取 id < beforeId 的更早记录（加载更多的游标） */
+  beforeId?: number | undefined
+  /** createdAt >= from（'YYYY-MM-DD HH:MM:SS'，含） */
+  from?: string | undefined
+  /** createdAt <= to（'YYYY-MM-DD HH:MM:SS'，含） */
+  to?: string | undefined
+}
+
+export interface LogPage {
+  items: LogRecord[]
+  /** 下一页游标：还有更早记录时返回本页最后一条 id，否则 null */
+  nextCursor: number | null
 }
 
 declare module 'cordis' {
@@ -208,16 +220,23 @@ export default class PanelService extends Service {
       .all()
   }
 
-  listLogs({ level, threadId, limit = 200 }: LogQuery = {}): LogRecord[] {
+  listLogs({ level, threadId, limit = 200, beforeId, from, to }: LogQuery = {}): LogPage {
     const conds: SQL[] = []
     if (level) conds.push(eq(logger.level, level))
     if (threadId) conds.push(eq(logger.threadId, threadId))
-    return this.ctx.database.db
+    if (beforeId != null) conds.push(lt(logger.id, beforeId))
+    if (from) conds.push(gte(logger.createdAt, from))
+    if (to) conds.push(lte(logger.createdAt, to))
+    // 多取一条判断是否还有更早的，避免额外的 count 查询
+    const rows = this.ctx.database.db
       .select()
       .from(logger)
       .where(conds.length ? and(...conds) : undefined)
       .orderBy(desc(logger.id))
-      .limit(limit)
+      .limit(limit + 1)
       .all()
+    const hasMore = rows.length > limit
+    const items = hasMore ? rows.slice(0, limit) : rows
+    return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null }
   }
 }

@@ -46,6 +46,12 @@ export interface LogRow {
   createdAt: string | null
 }
 
+export interface LogPage {
+  items: LogRow[]
+  /** 下一页游标：还有更早记录时返回本页最后一条 id，否则 null */
+  nextCursor: number | null
+}
+
 export interface OverviewData {
   counts: Record<TraceStatus, number>
   hourly: { bucket: string; count: number }[]
@@ -71,11 +77,23 @@ export const api = {
     get<TraceRow[]>(`/api/traces${status ? `?status=${encodeURIComponent(status)}` : ''}`),
   threads: () => get<ThreadRow[]>('/api/threads'),
   turns: (threadId: string) => get<TurnRow[]>(`/api/threads/${encodeURIComponent(threadId)}/turns`),
-  logs: (level?: string, threadId?: string) => {
-    const params = new URLSearchParams()
-    if (level) params.set('level', level)
-    if (threadId) params.set('threadId', threadId)
-    const qs = params.toString()
-    return get<LogRow[]>(`/api/logs${qs ? `?${qs}` : ''}`)
+  logs: (
+    params: {
+      level?: string
+      threadId?: string
+      beforeId?: number
+      from?: string
+      to?: string
+    } = {}
+  ) => {
+    const { level, threadId, beforeId, from, to } = params
+    const qs = new URLSearchParams()
+    if (level) qs.set('level', level)
+    if (threadId) qs.set('threadId', threadId)
+    if (beforeId != null) qs.set('beforeId', String(beforeId))
+    if (from) qs.set('from', from)
+    if (to) qs.set('to', to)
+    const s = qs.toString()
+    return get<LogPage>(`/api/logs${s ? `?${s}` : ''}`)
   }
 }
