@@ -3,7 +3,13 @@ import { dirname } from 'node:path'
 import { Service, type Context } from 'cordis'
 import { z } from 'zod'
 import { createAgent } from 'langchain'
-import { AIMessage, ToolMessage, SystemMessage, HumanMessage } from '@langchain/core/messages'
+import {
+  AIMessage,
+  ToolMessage,
+  SystemMessage,
+  HumanMessage,
+  type BaseMessage
+} from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { stringify } from '@/utils'
 import { threadContext } from '@/utils/context'
@@ -96,49 +102,9 @@ export default class AgentService extends Service {
           configurable: { thread_id: threadId }
         })
 
-        // stream 不是"只有 LLM 输出"——它是 LangGraph 整张图的逐步更新（streamMode:'updates'）。
-        // createAgent 的图 = agent 节点（调 LLM）+ tools 节点（执行工具）交替循环：
-        // 模型决定调工具 → agent 节点产出含 tool_calls 的 AIMessage → 图内部自动执行工具
-        // （tools 节点产出 ToolMessage）→ 循环回 agent → 直到模型不再调工具，最后的非工具
-        // AIMessage 即最终答案。所以工具调用发生在图内部（createAgent 已把 tools 绑进图），
-        // 这里只负责观察记录流经的步骤（发事件给 turn-recorder/output），不执行工具。
-        for await (const step of stream) {
-          for (const [node, update] of Object.entries(step)) {
-            for (const msg of update.messages ?? []) {
-              if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
-                // “边说边做”的过程话：带 tool_calls 的消息里 content 也可能有文本（如“好的，先看看 xx 文件”），
-                // 也发一条 agent/result 给观测层落库，但它不是最终答案，不更新 answer
-                const talk = typeof msg.content === 'string' ? msg.content : ''
-                if (talk) {
-                  this.ctx.emit('agent/result', { threadId, turnNo, node, text: talk })
-                }
-                this.ctx.emit('agent/tool-call', {
-                  threadId,
-                  turnNo,
-                  node,
-                  toolCalls: msg.tool_calls.map(call => ({
-                    id: call.id ?? '',
-                    name: call.name,
-                    args: call.args
-                  }))
-                })
-              } else if (ToolMessage.isInstance(msg)) {
-                this.ctx.emit('agent/tool-result', {
-                  threadId,
-                  turnNo,
-                  node,
-                  toolCallId: msg.tool_call_id,
-                  text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-                })
-              } else {
-                const text = typeof msg.content === 'string' ? msg.content : ''
-                this.ctx.emit('agent/result', { threadId, turnNo, node, text })
-                if (text) {
-                  answer = text // 最后一次非工具消息即最终答案
-                }
-              }
-            }
-          }
+        for await (const { node, msg } of this.iterMessages(stream)) {
+          const text = this.handleMessage(msg, { threadId, turnNo, node })
+          if (text) answer = text // 最后一次非工具消息即最终答案
         }
       } catch (err) {
         this.ctx.emit('agent/error', { threadId, turnNo, error: stringify(err) })
@@ -182,6 +148,58 @@ export default class AgentService extends Service {
       agent,
       streamInput: { messages: [new HumanMessage(input)] }
     }
+  }
+
+  /** 展平 LangGraph updates 流为 (node, msg) 消息流：三层嵌套收敛成单层遍历 */
+  private async *iterMessages(
+    stream: AsyncIterable<Record<string, { messages?: BaseMessage[] }>>
+  ): AsyncGenerator<{ node: string; msg: BaseMessage }> {
+    for await (const step of stream) {
+      for (const [node, update] of Object.entries(step)) {
+        for (const msg of update.messages ?? []) {
+          yield { node, msg }
+        }
+      }
+    }
+  }
+
+  /** 单条消息分发：工具调用 → agent/tool-call（content 过程话另发 agent/result），
+   *  工具结果 → agent/tool-result，非工具文本 → agent/result 并返回文本（最终答案覆盖用） */
+  private handleMessage(
+    msg: BaseMessage,
+    { threadId, turnNo, node }: { threadId: string; turnNo: number; node: string }
+  ): string {
+    if (AIMessage.isInstance(msg) && msg.tool_calls?.length) {
+      // “边说边做”的过程话：content 里的文本也广播 agent/result 落库，但不作为最终答案
+      const talk = typeof msg.content === 'string' ? msg.content : ''
+      if (talk) {
+        this.ctx.emit('agent/result', { threadId, turnNo, node, text: talk })
+      }
+      this.ctx.emit('agent/tool-call', {
+        threadId,
+        turnNo,
+        node,
+        toolCalls: msg.tool_calls.map(call => ({
+          id: call.id ?? '',
+          name: call.name,
+          args: call.args
+        }))
+      })
+      return ''
+    }
+    if (ToolMessage.isInstance(msg)) {
+      this.ctx.emit('agent/tool-result', {
+        threadId,
+        turnNo,
+        node,
+        toolCallId: msg.tool_call_id,
+        text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      })
+      return ''
+    }
+    const text = typeof msg.content === 'string' ? msg.content : ''
+    this.ctx.emit('agent/result', { threadId, turnNo, node, text })
+    return text
   }
 
   /**
