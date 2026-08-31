@@ -10,7 +10,7 @@
     "start": "tsx scripts/ensure-panel-dist.ts && tsx src/index.ts",
     "start:yml": "tsx scripts/start-yml.ts",
     "seed": "tsx scripts/seed.ts",
-    "test": "DB_PATH=:memory: tsx --test",
+    "test": "RAGDOLL_DB_PATH=:memory: tsx --test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",

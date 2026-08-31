@@ -1,4 +1,4 @@
-process.env.DB_PATH = ':memory:'
+process.env.RAGDOLL_DB_PATH = ':memory:'
 
 import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -91,13 +91,33 @@ test('TOOL_CALL / TOOL_RESULT 记录工具信息', () => {
   assert.equal(rows.length, 3)
   assert.equal(rows[1]?.hookType, 'TOOL_CALL')
   assert.equal(rows[1]?.turnNo, 1)
-  assert.equal(rows[1]?.toolCalls?.includes('getWeather'), true)
-  assert.equal(rows[1]?.content, null)
+  assert.equal(rows[1]?.toolCallId, 'c1')
+  assert.equal(rows[1]?.toolName, 'getWeather')
+  assert.equal(rows[1]?.args, JSON.stringify({ city: 'hz' }))
   assert.equal(rows[2]?.hookType, 'TOOL_RESULT')
   assert.equal(rows[2]?.turnNo, 1)
   assert.equal(rows[2]?.toolCallId, 'c1')
   assert.equal(rows[2]?.toolsResult, 'sunny')
-  assert.equal(rows[2]?.content, null)
+})
+
+test('一次响应多个并行调用：每个调用一行 TOOL_CALL，各自带 toolCallId', () => {
+  ctx.emit('agent/input', { threadId: 't1', turnNo: 1, input: 'hello' })
+  ctx.emit('agent/tool-call', {
+    threadId: 't1',
+    turnNo: 1,
+    node: 'model',
+    toolCalls: [
+      { id: 'c1', name: 'getWeather', args: { city: 'hz' } },
+      { id: 'c2', name: 'getTime', args: {} }
+    ]
+  })
+
+  const rows = getRows().filter(r => r.hookType === 'TOOL_CALL')
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0]?.toolCallId, 'c1')
+  assert.equal(rows[0]?.toolName, 'getWeather')
+  assert.equal(rows[1]?.toolCallId, 'c2')
+  assert.equal(rows[1]?.toolName, 'getTime')
 })
 
 test('TurnsService.nextTurnNo 基于现有记录递增（无记录从 1 开始）', () => {

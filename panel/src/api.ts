@@ -30,7 +30,8 @@ export interface TurnRow {
   hookType: string
   node: string | null
   toolCallId: string | null
-  toolCalls: string | null
+  toolName: string | null
+  args: string | null
   content: string | null
   toolsResult: string | null
   createdAt: string | null

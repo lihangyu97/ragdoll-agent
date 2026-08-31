@@ -5,29 +5,15 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1787758334732,
-      "tag": "0000_lucky_praxagora",
+      "when": 1788106537638,
+      "tag": "0000_sudden_pepper_potts",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1787820974714,
-      "tag": "0001_bright_crusher_hogan",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1788009761838,
-      "tag": "0002_peaceful_vin_gonzales",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1788010020045,
-      "tag": "0003_giant_nick_fury",
+      "when": 1788108756720,
+      "tag": "0001_graceful_captain_stacy",
       "breakpoints": true
     }
   ]

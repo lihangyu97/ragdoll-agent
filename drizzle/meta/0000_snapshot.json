@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "2071a83a-5236-40bc-97a3-d04d8bf1797e",
+  "id": "4e9b81b1-2fe3-4c8c-aa8a-530c47e0b503",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "agent_threads": {
@@ -126,6 +126,13 @@
           "autoincrement": false,
           "default": "'pending'"
         },
+        "heartbeat_at": {
+          "name": "heartbeat_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -143,7 +150,13 @@
           "default": "(datetime('now', 'localtime'))"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "agent_traces_status_created_at": {
+          "name": "agent_traces_status_created_at",
+          "columns": ["status", "created_at"],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "agent_traces_thread_id_agent_threads_thread_id_fk": {
           "name": "agent_traces_thread_id_agent_threads_thread_id_fk",
@@ -204,8 +217,15 @@
           "notNull": false,
           "autoincrement": false
         },
-        "tool_calls": {
-          "name": "tool_calls",
+        "tool_name": {
+          "name": "tool_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "args": {
+          "name": "args",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -234,7 +254,14 @@
           "default": "(datetime('now', 'localtime'))"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "agent_turns_thread_turn_input": {
+          "name": "agent_turns_thread_turn_input",
+          "columns": ["thread_id", "turn_no"],
+          "isUnique": true,
+          "where": "hook_type = 'INPUT'"
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -322,7 +349,13 @@
           "default": "(datetime('now', 'localtime'))"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "channel_messages_channel_message_id": {
+          "name": "channel_messages_channel_message_id",
+          "columns": ["channel", "message_id"],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

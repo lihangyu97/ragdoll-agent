@@ -10,7 +10,8 @@ import CapabilityService from '../src/services/agent/capability/CapabilityServic
 async function setup(opts?: { root: string; cwd?: string; commands?: string[] }) {
   const ctx = new Context()
   await ctx.plugin(CapabilityService, opts)
-  const spec = await ctx.capability.assemble()
+  // 显式用非 chatOnly 定义：系统工具的注入对象是普通 agent，内置 default 是纯聊天不含工具
+  const spec = await ctx.capability.assemble({ id: 'test', basePrompt: 'test' })
   const tool = (name: string): ClientTool => spec.tools.find(t => t.name === name)!
   return { ctx, tool }
 }

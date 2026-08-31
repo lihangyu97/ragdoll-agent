@@ -12,7 +12,7 @@ let dbPath: string | null = null
  */
 export function getDb(path?: string): Database.Database {
   if (!db || (path && path !== dbPath)) {
-    const resolved = path ?? process.env.DB_PATH ?? 'data/agent.db'
+    const resolved = path ?? process.env.RAGDOLL_DB_PATH ?? 'data/agent.db'
     dbPath = resolved
     mkdirSync(dirname(resolved), { recursive: true })
     db = new Database(resolved)

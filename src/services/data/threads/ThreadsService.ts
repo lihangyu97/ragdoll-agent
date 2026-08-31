@@ -40,11 +40,11 @@ export default class ThreadsService extends Service {
     return row?.agentId ?? null
   }
 
-  /** 绑定 thread → agent definition id（worker process 首次消费时调用，一次性定终身） */
-  setAgentId(threadId: string, agentId: string) {
+  /** 绑定 thread → agent definition id，并记录路由原因（worker process 首次消费时调用，一次性定终身） */
+  setAgentId(threadId: string, agentId: string, reason: string) {
     this.ctx.database.db
       .update(agentThreads)
-      .set({ agentId })
+      .set({ agentId, agentReason: reason })
       .where(eq(agentThreads.threadId, threadId))
       .run()
   }

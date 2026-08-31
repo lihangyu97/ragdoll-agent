@@ -14,7 +14,7 @@ const SEED_USERS = [
 ]
 
 const ctx = new Context()
-ctx.plugin(DatabaseService, { dbPath: process.env.DB_PATH ?? 'data/agent.db' })
+ctx.plugin(DatabaseService, { dbPath: process.env.RAGDOLL_DB_PATH ?? 'data/agent.db' })
 await ctx.plugin(ChannelStoreService)
 
 for (const user of SEED_USERS) {

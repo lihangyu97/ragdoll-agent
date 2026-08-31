@@ -1,4 +1,4 @@
-process.env.DB_PATH = ':memory:'
+process.env.RAGDOLL_DB_PATH = ':memory:'
 
 import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -45,9 +45,9 @@ test('getAgentId：新建 thread 默认 null；setAgentId 绑定后可读回', (
   ctx.threads.ensureThread('t1', 'p2p', 'chat-1', 'ou-1')
   assert.equal(ctx.threads.getAgentId('t1'), null)
 
-  ctx.threads.setAgentId('t1', 'kb-bot')
+  ctx.threads.setAgentId('t1', 'kb-bot', '测试原因')
   assert.equal(ctx.threads.getAgentId('t1'), 'kb-bot')
 
-  ctx.threads.setAgentId('t1', 'default') // 可覆盖（绑定动作幂等）
+  ctx.threads.setAgentId('t1', 'default', '测试原因') // 可覆盖（绑定动作幂等）
   assert.equal(ctx.threads.getAgentId('t1'), 'default')
 })

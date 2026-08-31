@@ -1,6 +1,6 @@
 // 临时验证脚本（验证后删除）：只起 database + panel，不接渠道/worker，灌演示数据
-process.env.DB_PATH = '/tmp/panel-demo.db'
-process.env.PANEL_PORT = '3111'
+process.env.RAGDOLL_DB_PATH = '/tmp/panel-demo.db'
+process.env.RAGDOLL_PANEL_PORT = '3111'
 
 import { Context } from 'cordis'
 import DatabaseService from '../src/services/data/database/DatabaseService'
@@ -16,7 +16,7 @@ import {
 } from '../src/services/data/database/schema'
 
 const ctx = new Context()
-ctx.plugin(DatabaseService, { dbPath: process.env.DB_PATH })
+ctx.plugin(DatabaseService, { dbPath: process.env.RAGDOLL_DB_PATH })
 ctx.plugin(ThreadsService)
 ctx.plugin(PanelService)
 ctx.plugin(panel, { port: 3111 })
@@ -88,7 +88,9 @@ db.insert(agentTurns)
     turnNo: 1,
     hookType: 'TOOL_CALL',
     node: 'llm',
-    toolCalls: JSON.stringify([{ id: 'call_1', name: 'weather_query', args: { city: '北京' } }])
+    toolCallId: 'call_1',
+    toolName: 'weather_query',
+    args: JSON.stringify({ city: '北京' })
   })
   .run()
 db.insert(agentTurns)

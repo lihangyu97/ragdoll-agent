@@ -151,22 +151,29 @@ export default class WorkerService extends Service {
     }
   }
 
-  /** 路由归属：已绑定 → 规则 → LLM 识别 → default */
+  /** 路由归属：已绑定 → 规则 → LLM 识别 → default。每次绑定都在 agent_reason 落下原因 */
   private async resolveAgentId(trace: AgentTraceRecord): Promise<string> {
     const bound = this.ctx.threads.getAgentId(trace.threadId)
     if (bound) return bound
 
     const rule = this.ctx.bail('agent/resolve', trace.threadId, trace.inputText)
     if (rule && this.ctx.capability.hasDefinition(rule)) {
-      this.ctx.threads.setAgentId(trace.threadId, rule)
+      this.ctx.threads.setAgentId(trace.threadId, rule, 'agent/resolve 规则命中')
       return rule
     }
 
     const identified = await this.ctx.agent.identify(trace.inputText)
     const agentId =
-      identified && this.ctx.capability.hasDefinition(identified) ? identified : 'default'
-    this.ctx.threads.setAgentId(trace.threadId, agentId)
-    logger.info(`[worker] thread ${trace.threadId} 绑定 agent=${agentId}`)
+      identified?.agentId && this.ctx.capability.hasDefinition(identified.agentId)
+        ? identified.agentId
+        : 'default'
+    // 原因优先取模型解释；落到 default（识别为 null / id 不存在）或识别失败时补兜底说明
+    const reason = identified
+      ? (identified.reason || '模型未给出原因') +
+        (agentId === 'default' ? '（识别未命中，降级 default）' : '')
+      : '识别失败/异常，降级 default'
+    this.ctx.threads.setAgentId(trace.threadId, agentId, `模型识别：${reason}`)
+    logger.info(`[worker] thread ${trace.threadId} 绑定 agent=${agentId}（${reason}）`)
     return agentId
   }
 

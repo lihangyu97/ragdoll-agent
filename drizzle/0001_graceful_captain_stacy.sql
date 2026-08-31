@@ -1,0 +1,1 @@
+ALTER TABLE `agent_threads` ADD `agent_reason` text;

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "627243f5-030d-4314-b23a-2221f77835f0",
-  "prevId": "2071a83a-5236-40bc-97a3-d04d8bf1797e",
+  "id": "70b61241-dc81-49cb-98e7-bf1748cd9089",
+  "prevId": "4e9b81b1-2fe3-4c8c-aa8a-530c47e0b503",
   "tables": {
     "agent_threads": {
       "name": "agent_threads",
@@ -37,6 +37,13 @@
         },
         "agent_id": {
           "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "agent_reason": {
+          "name": "agent_reason",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -126,6 +133,13 @@
           "autoincrement": false,
           "default": "'pending'"
         },
+        "heartbeat_at": {
+          "name": "heartbeat_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -143,7 +157,13 @@
           "default": "(datetime('now', 'localtime'))"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "agent_traces_status_created_at": {
+          "name": "agent_traces_status_created_at",
+          "columns": ["status", "created_at"],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "agent_traces_thread_id_agent_threads_thread_id_fk": {
           "name": "agent_traces_thread_id_agent_threads_thread_id_fk",
@@ -204,8 +224,15 @@
           "notNull": false,
           "autoincrement": false
         },
-        "tool_calls": {
-          "name": "tool_calls",
+        "tool_name": {
+          "name": "tool_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "args": {
+          "name": "args",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

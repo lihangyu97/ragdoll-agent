@@ -18,6 +18,7 @@ import WorkerService from '@/services/worker/WorkerService'
 // - src/plugins/*：基础设施插件（channel、panel、worker 等与具体 agent 无关的胶水）
 import channelLark from '@/plugins/channel-lark'
 import weatherAssistant from '@/agents/weather'
+import homeAssistant from '@/agents/home'
 import larkImage from '@/plugins/lark-image'
 import skillLoader from '@/plugins/skill-loader'
 import worker from '@/plugins/worker'
@@ -48,40 +49,51 @@ process.on('uncaughtException', err => {
 })
 
 // 配置统一从环境变量读入，经 cordis Config（zod schema）校验后传给插件；缺配置 → 插件 FAILED
-app.plugin(DatabaseService, { dbPath: process.env.DB_PATH ?? 'data/agent.db' })
+app.plugin(DatabaseService, { dbPath: process.env.RAGDOLL_DB_PATH ?? 'data/agent.db' })
 app.plugin(TracesService)
 app.plugin(ThreadsService)
 app.plugin(TurnsService)
 app.plugin(PanelService)
 app.plugin(ChannelStoreService)
 app.plugin(CapabilityService, {
-  root: process.env.SYSTEM_TOOLS_ROOT ?? 'data/workspace',
-  commands: (process.env.SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean),
-  enableSkillScripts: process.env.ENABLE_SKILL_SCRIPTS === 'true'
+  root: process.env.RAGDOLL_SYSTEM_TOOLS_ROOT ?? 'data/workspace',
+  commands: (process.env.RAGDOLL_SYSTEM_TOOLS_COMMANDS ?? '').split(',').filter(Boolean),
+  enableSkillScripts: process.env.RAGDOLL_ENABLE_SKILL_SCRIPTS === 'true'
 })
 app.plugin(ProviderService, {
-  apiKey: process.env.OPENAI_API_KEY!,
-  baseUrl: process.env.OPENAI_BASE_URL!,
-  model: process.env.OPENAI_MODEL ?? 'deepseek-v4-flash'
+  apiKey: process.env.RAGDOLL_OPENAI_API_KEY!,
+  baseUrl: process.env.RAGDOLL_OPENAI_BASE_URL!,
+  model: process.env.RAGDOLL_OPENAI_MODEL ?? 'deepseek-v4-flash'
 })
 app.plugin(AgentService, {
-  dbPath: process.env.DB_PATH ?? 'data/agent.db'
+  dbPath: process.env.RAGDOLL_DB_PATH ?? 'data/agent.db'
 })
 app.plugin(weatherAssistant)
+app.plugin(homeAssistant)
 app.plugin(larkImage)
-app.plugin(skillLoader, { skillsRoot: process.env.SKILLS_ROOT ?? 'skills' })
+app.plugin(skillLoader, { skillsRoot: process.env.RAGDOLL_SKILLS_ROOT ?? 'skills' })
 app.plugin(ChannelService, { thinkingReply: '🤔 正在思考中…' })
 app.plugin(LarkAdapter, {
-  appId: process.env.LARK_APP_ID!,
-  appSecret: process.env.LARK_APP_SECRET!,
-  domain: process.env.LARK_DOMAIN === 'lark' ? 'lark' : 'feishu'
+  appId: process.env.RAGDOLL_LARK_APP_ID!,
+  appSecret: process.env.RAGDOLL_LARK_APP_SECRET!,
+  domain: process.env.RAGDOLL_LARK_DOMAIN === 'lark' ? 'lark' : 'feishu'
 })
 app.plugin(channelLark)
 app.plugin(WorkerService)
 app.plugin(worker)
 app.plugin(turnRecorder)
-app.plugin(panel, { port: Number(process.env.PANEL_PORT ?? 3111) })
+app.plugin(panel, { port: Number(process.env.RAGDOLL_PANEL_PORT ?? 3111) })
 // app.plugin(output)
+
+// 启动时打印挂载的 agent 目录。skill-loader 的 apply 是异步的，但 definition 注册
+// （weather 插件）是同步 apply，退一个 macrotask 打印即可保证收齐
+setTimeout(() => {
+  const defs = app.capability.listDefinitions()
+  const lines = defs
+    .map(d => `  - ${d.id.padEnd(12)} ${d.basePrompt.split('\n')[0]?.slice(0, 60) ?? ''}`)
+    .join('\n')
+  console.log(`[app] 已挂载 ${defs.length} 个 agent definition：\n${lines}`)
+}, 0)
 
 let closing = false
 const close = async () => {

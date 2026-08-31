@@ -1,4 +1,4 @@
-process.env.DB_PATH = ':memory:'
+process.env.RAGDOLL_DB_PATH = ':memory:'
 
 import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -19,7 +19,7 @@ import type { OutboundReply } from '../src/services/channel/types'
 /** mock agent：记录调用（含 agentId），可配置 identify 结果 / 失败 / 挂起等待放行 */
 class MockAgentService extends Service {
   static calls: { input: string; threadId: string; agentId: string }[] = []
-  static identifyResult: string | null = null
+  static identifyResult: { agentId: string | null; reason: string } | null = null
   static identifyCalls = 0
   static failNext = false
   static gate: Promise<void> | null = null
@@ -40,7 +40,7 @@ class MockAgentService extends Service {
     return 'mock reply'
   }
 
-  async identify(_input: string): Promise<string | null> {
+  async identify(_input: string): Promise<{ agentId: string | null; reason: string } | null> {
     MockAgentService.identifyCalls++
     return MockAgentService.identifyResult
   }
@@ -263,9 +263,9 @@ test('未绑定 thread：识别 null → 绑定 default 后运行', async t => {
 test('已绑定 thread：直接用绑定 agent，不再识别', async t => {
   t.after(() => ctx.worker.stop())
   ctx.threads.ensureThread('t2', 'p2p', 'chat-1', null)
-  ctx.threads.setAgentId('t2', 'kb-bot')
+  ctx.threads.setAgentId('t2', 'kb-bot', '测试原因')
   const traceId = ctx.traces.insertTrace('t2', 'm-1', 'chat-1', 'hi', 'lark')
-  MockAgentService.identifyResult = 'kb-bot'
+  MockAgentService.identifyResult = { agentId: 'kb-bot', reason: '测试原因' }
 
   ctx.worker.start()
   await waitUntil(() => {
@@ -306,7 +306,7 @@ test('规则事件命中：agent/resolve 返回 id → 绑定并运行，不走�
 test('识别返回存在的 agent → 绑定并运行', async t => {
   t.after(() => ctx.worker.stop())
   ctx.capability.registerDefinition({ id: 'kb-bot', basePrompt: 'You are kb assistant.' })
-  MockAgentService.identifyResult = 'kb-bot'
+  MockAgentService.identifyResult = { agentId: 'kb-bot', reason: '测试原因' }
   const traceId = seedTrace('t1', '帮我查知识库')
 
   ctx.worker.start()
@@ -325,7 +325,7 @@ test('识别返回存在的 agent → 绑定并运行', async t => {
 
 test('识别返回不存在的 agent → 降级 default', async t => {
   t.after(() => ctx.worker.stop())
-  MockAgentService.identifyResult = 'ghost' // 未注册的 definition
+  MockAgentService.identifyResult = { agentId: 'ghost', reason: '测试原因' } // 未注册的 definition
   const traceId = seedTrace('t1', 'hi')
 
   ctx.worker.start()
