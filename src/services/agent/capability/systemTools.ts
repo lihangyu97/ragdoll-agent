@@ -27,6 +27,7 @@ const IGNORED = new Set(['node_modules', '.git', 'dist', 'build', '.DS_Store'])
  * 系统级工具（平台执行原语）：任何 agent 天生可用，与业务/领域无关。
  * 由 CapabilityService 构造时 seed，assemble 自动并入每个 agent。
  * 注意：沙箱路径校验 + 命令白名单只是演示级护栏，不是真正的安全边界（真边界 = OS 沙箱/容器）。
+ * todo：tools_call 前后 hook，拦截敏感操作
  */
 export function createSystemTools(options: SystemToolsOptions = {}): ClientTool[] {
   const root = resolve(options.root ?? 'data/workspace')
