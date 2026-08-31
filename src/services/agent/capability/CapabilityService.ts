@@ -10,14 +10,6 @@ declare module 'cordis' {
   interface Context {
     capability: CapabilityService
   }
-  interface Events {
-    // 组装期改写点：监听器签名 (prompt, definition, next)，调用 next() 取下游结果后再改写
-    'agent/prompt-build': (
-      prompt: string,
-      definition: AgentDefinition,
-      next: () => unknown
-    ) => unknown
-  }
 }
 
 /** 技能：可复用的任务指令包（与来源无关：代码注册 / 文件加载（agentskills.io 标准格式）） */
@@ -61,6 +53,9 @@ export interface AgentDefinition {
   tools?: string[]
   /** 纯聊天 agent：不注入系统工具、技能目录与 load_skill，只有 prompt，没有任何工具 */
   chatOnly?: boolean
+  /** 可选：定制最终 systemPrompt。接收已拼好的 prompt（basePrompt + personas + skills），
+   *  返回最终版；不提供则原样使用。每轮 assemble 都会调用（无运行时缓存，天然每轮生效） */
+  buildSystemPrompt?: (prompt: string, info: { agentId: string }) => string | Promise<string>
 }
 
 /** 组装产物：agent 运行时按此快照构建 langchain agent */
@@ -284,8 +279,8 @@ export default class CapabilityService extends Service {
 
     const built = parts.join('\n\n')
 
-    // 组装期改写点：插件可经 ctx.waterfall('agent/prompt-build', ...) 追加/改写 systemPrompt
-    return (await this.ctx.waterfall('agent/prompt-build', built, def, () => built)) as string
+    // definition 级定制：def.buildSystemPrompt 存在则用它改写（无则原样返回）
+    return (await def.buildSystemPrompt?.(built, { agentId: def.id })) ?? built
   }
 
   private collectTools(def: AgentDefinition): ClientTool[] {

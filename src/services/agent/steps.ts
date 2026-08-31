@@ -21,12 +21,6 @@ export interface AgentEventBase {
   turnNo: number
 }
 
-/** agent/system-prompt 事件上下文：运行期改写（waterfall，事件签名见 AgentService） */
-export interface AgentSystemPromptInfo extends AgentEventBase {
-  agentId: string
-  input: string
-}
-
 /** agent/input 事件载荷：一轮执行的用户输入 */
 export interface AgentInputEvent extends AgentEventBase {
   input: string

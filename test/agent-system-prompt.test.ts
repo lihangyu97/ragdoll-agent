@@ -103,7 +103,7 @@ function systemMessage(): string {
     .join('\n')
 }
 
-test('无钩子：基础 systemPrompt 原样传给模型', async () => {
+test('无 buildSystemPrompt：基础 systemPrompt 原样传给模型', async () => {
   const ctx = await setup()
 
   const answer = await ctx.agent.run('你好', 't1', 'default')
@@ -112,36 +112,33 @@ test('无钩子：基础 systemPrompt 原样传给模型', async () => {
   assert.ok(systemMessage().includes('You are a helpful assistant'))
 })
 
-test('agent/system-prompt 钩子改写：next() 拿下游结果后追加，事件上下文正确', async () => {
+test('definition.buildSystemPrompt：组装期改写 systemPrompt，模型收到改写后内容', async () => {
   const ctx = await setup()
-  const seen: Array<Record<string, unknown>> = []
-  ctx.on('agent/system-prompt', (prompt, info, next) => {
-    seen.push({ prompt, ...info })
-    const base = next() as string
-    return `${base}\n\n[测试后缀]`
+  ctx.capability.registerDefinition({
+    id: 'custom',
+    basePrompt: 'custom base',
+    buildSystemPrompt: async prompt => `${prompt}\n\n[定制后缀]`
   })
 
-  const answer = await ctx.agent.run('hello', 't2', 'default')
+  const answer = await ctx.agent.run('hello', 't2', 'custom')
 
   assert.equal(answer, 'ok')
-  assert.equal(seen.length, 1)
-  assert.equal(seen[0]!.threadId, 't2')
-  assert.equal(seen[0]!.turnNo, 1)
-  assert.equal(seen[0]!.agentId, 'default')
-  assert.equal(seen[0]!.input, 'hello')
-  assert.ok((seen[0]!.prompt as string).includes('You are a helpful assistant'))
-  // 改写后的 prompt 生效：模型收到的 SystemMessage 带后缀
-  assert.ok(systemMessage().endsWith('[测试后缀]'))
+  assert.ok(systemMessage().includes('custom base'))
+  assert.ok(systemMessage().endsWith('[定制后缀]'))
 })
 
-test('钩子不修改：直接返回 next() 结果，prompt 保持不变', async () => {
+test('buildSystemPrompt 不修改：返回原 prompt，内容不变', async () => {
   const ctx = await setup()
-  ctx.on('agent/system-prompt', (_prompt, _info, next) => next())
+  ctx.capability.registerDefinition({
+    id: 'custom2',
+    basePrompt: 'plain base',
+    buildSystemPrompt: prompt => prompt
+  })
 
-  await ctx.agent.run('hello', 't3', 'default')
+  await ctx.agent.run('hello', 't3', 'custom2')
 
-  assert.ok(!systemMessage().includes('[测试后缀]'))
-  assert.ok(systemMessage().includes('You are a helpful assistant'))
+  assert.ok(!systemMessage().includes('[定制后缀]'))
+  assert.ok(systemMessage().includes('plain base'))
 })
 
 test('带 tool_calls 的消息里的过程话也广播 agent/result，但不作为最终答案', async () => {

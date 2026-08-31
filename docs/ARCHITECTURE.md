@@ -117,14 +117,12 @@ interface InboundMessage {
 
 ## 4. 事件协议一览
 
-| 事件                  | 模式        | 用途                                                                             |
-| --------------------- | ----------- | -------------------------------------------------------------------------------- |
-| `agent/*`（六个）     | `emit`      | 执行观测（载荷框架无关，见 §3.2）                                                |
-| `message/received`    | `emit`      | channel dispatch 后广播 `{ channel, threadId, text }`，观察/审计用               |
-| `trace/status`        | `emit`      | worker 状态流转广播 `{ threadId, status }`                                       |
-| `agent/resolve`       | `bail`      | 规则层路由：监听器返回 agentId 即命中（确定性规则），未命中走 LLM 识别           |
-| `agent/prompt-build`  | `waterfall` | 组装期改写 systemPrompt（守卫、插件注入）                                        |
-| `agent/system-prompt` | `waterfall` | 运行期每轮改写 systemPrompt（带 thread/turn/agentId/input 上下文，插件可选改写） |
+| 事件               | 模式   | 用途                                                                   |
+| ------------------ | ------ | ---------------------------------------------------------------------- |
+| `agent/*`（六个）  | `emit` | 执行观测（载荷框架无关，见 §3.2）                                      |
+| `message/received` | `emit` | channel dispatch 后广播 `{ channel, threadId, text }`，观察/审计用     |
+| `trace/status`     | `emit` | worker 状态流转广播 `{ threadId, status }`                             |
+| `agent/resolve`    | `bail` | 规则层路由：监听器返回 agentId 即命中（确定性规则），未命中走 LLM 识别 |
 
 ## 5. 扩展指南
 
@@ -145,13 +143,13 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 
 ### 新能力（工具 / skill / definition）
 
-全部经 `ctx.capability` 注册（`src/services/agent/capability/CapabilityService.ts`），注册即 `version +1`；`AgentService` 每轮 run 重新 `assemble` + `createAgent`（无运行时缓存，systemPrompt 每轮可被 `agent/system-prompt` 改写）：
+全部经 `ctx.capability` 注册（`src/services/agent/capability/CapabilityService.ts`），注册即 `version +1`；`AgentService` 每轮 run 重新 `assemble` + `createAgent`（无运行时缓存，systemPrompt 组装经 `definition.buildSystemPrompt` 定制，每轮生效）：
 
 - `registerTool(tool)`：领域工具（langchain `ClientTool`）；系统工具（read_file/write_file/…，平台原语）构造时 seed，默认进每个 agent（chatOnly 纯聊天除外），不可同名注册/注销
 - `registerSkill(skill)`：`{ name, description, trigger?, instructions, resources?, tools?, license?, compatibility?, metadata?, scripts? }`；默认 `catalog` 懒加载——**目录注册表驱动**（列出全部已注册技能，`def.skills` 不参与过滤，往 `skills/` 丢技能即对所有 catalog agent 可发现）+ 内置 `load_skill(name)` 工具（支持 `resource` 参数按需加载技能文件，渐进披露对齐 agentskills.io 规范）；`full` 模式保持 opt-in（只编译 `def.skills` 声明的技能 instructions），小技能集可用
 - **文件技能（agentskills.io 标准格式）**：`skill-loader` 插件启动时扫描 `skillsRoot`（默认 `skills`，`RAGDOLL_SKILLS_ROOT` env）下 `<name>/SKILL.md`（YAML frontmatter + 正文），校验命名/必填后注册进 capability；`references/` `assets/` `scripts/` 下文本文件进 `resources`（scripts 另有 `scripts` 执行索引）；与代码注册同名 → 文件版覆盖。`license`/`compatibility`/`metadata` 为宿主侧字段，存而不渲染（不进 prompt）
 - **技能脚本执行（`run_skill_script`）**：`CapabilityService` 开 `enableSkillScripts`（`RAGDOLL_ENABLE_SKILL_SCRIPTS=true`）后注入；仅执行 `skills/<name>/scripts/` 白名单索引内的脚本，解释器白名单（bash/sh、python3、node），`execFile` 无 shell 注入面，cwd 限定技能目录 + 超时 + 输出截断；与 `run_command` 同为演示级护栏，真隔离需 OS 沙箱/容器
-- `registerDefinition(def)`：`{ id, basePrompt, personas?, skills?, skillMode?, tools?, chatOnly? }` 声明式规格，`assemble(def)` 产出 `AgentSpec`（systemPrompt + tools）
+- `registerDefinition(def)`：`{ id, basePrompt, personas?, skills?, skillMode?, tools?, chatOnly?, buildSystemPrompt? }` 声明式规格，`assemble(def)` 产出 `AgentSpec`（systemPrompt + tools）；`buildSystemPrompt(prompt, { agentId })` 可选：定制最终 systemPrompt（接收 basePrompt + personas + skills 拼好的 prompt，返回最终版）
 
 ## 6. 待办
 

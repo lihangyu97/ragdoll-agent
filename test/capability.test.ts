@@ -260,15 +260,16 @@ test('listDefinitions / hasDefinition：路由识别辅助', async () => {
   assert.equal(ctx.capability.hasDefinition('ghost'), false)
 })
 
-test('waterfall 改写点：插件可在组装期追加 systemPrompt', async () => {
+test('definition.buildSystemPrompt 定制：组装期改写 systemPrompt', async () => {
   const ctx = await setup()
-  ctx.on(
-    'agent/prompt-build',
-    async (_prompt, _def, next) => `${(await next()) as string}\n\n[plugin-suffix]`
-  )
+  ctx.capability.registerDefinition({
+    id: 'custom',
+    basePrompt: 'base',
+    buildSystemPrompt: async prompt => `${prompt}\n\n[custom-suffix]`
+  })
 
-  const spec = await ctx.capability.assemble()
-  assert.ok(spec.systemPrompt.endsWith('[plugin-suffix]'))
+  const spec = await ctx.capability.assemble('custom')
+  assert.ok(spec.systemPrompt.endsWith('[custom-suffix]'))
 })
 
 test('存在性校验：def/skill 引用未注册工具 → 跳过不崩（多渠道场景缺渠道插件）', async () => {

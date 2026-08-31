@@ -18,7 +18,6 @@ import type {
   AgentErrorEvent,
   AgentInputEvent,
   AgentResultEvent,
-  AgentSystemPromptInfo,
   AgentTimeoutEvent,
   AgentToolCallEvent,
   AgentToolResultEvent
@@ -36,13 +35,6 @@ declare module 'cordis' {
     'agent/result': (payload: AgentResultEvent) => void
     'agent/error': (payload: AgentErrorEvent) => void
     'agent/timeout': (payload: AgentTimeoutEvent) => void
-    // 运行期改写点（waterfall）：每轮 run 广播基础 systemPrompt，插件可选择改写；
-    // 监听器签名 (prompt, info, next)，调用 next() 取下游结果后再改写，直接返回则短路
-    'agent/system-prompt': (
-      systemPrompt: string,
-      info: AgentSystemPromptInfo,
-      next: () => unknown
-    ) => unknown
   }
 }
 
@@ -78,7 +70,7 @@ export default class AgentService extends Service {
     return checkpointer
   }
 
-  // 每轮组装 + createAgent：systemPrompt 每轮经 agent/system-prompt 钩子改写，不做缓存
+  // 每轮组装 + createAgent：systemPrompt 由 definition.buildSystemPrompt 定制，不做缓存
   async run(input: string, threadId: string, agentId = 'default'): Promise<string | null> {
     let answer: string | null = null
 
@@ -95,7 +87,7 @@ export default class AgentService extends Service {
       try {
         this.ctx.emit('agent/input', { threadId, turnNo, input })
 
-        const { agent, streamInput } = await this.prepare(input, threadId, agentId, turnNo)
+        const { agent, streamInput } = await this.prepare(input, agentId)
         const stream = await agent.stream(streamInput, {
           streamMode: 'updates',
           signal: controller.signal,
@@ -117,30 +109,22 @@ export default class AgentService extends Service {
   }
 
   /**
-   * 一轮 stream 的准备：组装基础 prompt（含组装期 agent/prompt-build 改写）→ agent/system-prompt
-   * waterfall 运行期改写 → 按最终 prompt 构建 agent（langchain systemPrompt 构建期定死，每轮
-   * 改写后必须重建；checkpointer 共享，thread 历史不丢）。返回 stream 所需的一切。
+   * 一轮 stream 的准备：assemble 组装 systemPrompt（含 definition.buildSystemPrompt 定制）→
+   * 构建 agent（langchain systemPrompt 构建期定死，每轮重建；checkpointer 共享，thread 历史不丢）。
+   * 返回 stream 所需的一切。
    */
   private async prepare(
     input: string,
-    threadId: string,
-    agentId: string,
-    turnNo: number
+    agentId: string
   ): Promise<{
     agent: ReturnType<typeof createAgent>
     streamInput: { messages: [HumanMessage] }
   }> {
     const spec = await this.ctx.capability.assemble(agentId)
-    const systemPrompt = this.ctx.waterfall(
-      'agent/system-prompt',
-      spec.systemPrompt,
-      { threadId, turnNo, agentId, input },
-      () => spec.systemPrompt
-    ) as string
     const agent = createAgent({
       model: this.ctx.provider.getModel(),
       tools: spec.tools,
-      systemPrompt,
+      systemPrompt: spec.systemPrompt,
       checkpointer: this.checkpointer
     })
 
