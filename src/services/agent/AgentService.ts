@@ -12,7 +12,6 @@ import {
 } from '@langchain/core/messages'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import { stringify } from '@/utils'
-import { threadContext } from '@/utils/context'
 import logger from '@/utils/logger'
 import type {
   AgentErrorEvent,
@@ -74,37 +73,36 @@ export default class AgentService extends Service {
   async run(input: string, threadId: string, agentId = 'default'): Promise<string | null> {
     let answer: string | null = null
 
-    await threadContext.run(threadId, async () => {
-      // 轮次号在 run 入口算一次，同一轮内所有事件共用（含 error/timeout）
-      const turnNo = this.ctx.turns.nextTurnNo(threadId)
+    // 轮次号在 run 入口算一次，同一轮内所有事件共用（含 error/timeout）
+    const turnNo = this.ctx.turns.nextTurnNo(threadId)
 
-      const controller = new AbortController()
-      const timer = setTimeout(() => {
-        controller.abort()
-        this.ctx.emit('agent/timeout', { threadId, turnNo })
-      }, AGENT_RUN_TIMEOUT_MS)
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      controller.abort()
+      this.ctx.emit('agent/timeout', { threadId, turnNo })
+    }, AGENT_RUN_TIMEOUT_MS)
 
-      try {
-        this.ctx.emit('agent/input', { threadId, turnNo, input })
+    try {
+      this.ctx.emit('agent/input', { threadId, turnNo, input })
 
-        const { agent, streamInput } = await this.prepare(input, agentId)
-        const stream = await agent.stream(streamInput, {
-          streamMode: 'updates',
-          signal: controller.signal,
-          configurable: { thread_id: threadId }
-        })
+      const { agent, streamInput } = await this.prepare(input, agentId)
+      const stream = await agent.stream(streamInput, {
+        streamMode: 'updates',
+        signal: controller.signal,
+        configurable: { thread_id: threadId }
+      })
 
-        for await (const { node, msg } of this.iterMessages(stream)) {
-          const text = this.handleMessage(msg, { threadId, turnNo, node })
-          if (text) answer = text // 最后一次非工具消息即最终答案
-        }
-      } catch (err) {
-        this.ctx.emit('agent/error', { threadId, turnNo, error: stringify(err) })
-        throw err
-      } finally {
-        clearTimeout(timer)
+      for await (const { node, msg } of this.iterMessages(stream)) {
+        const text = this.handleMessage(msg, { threadId, turnNo, node })
+        if (text) answer = text // 最后一次非工具消息即最终答案
       }
-    })
+    } catch (err) {
+      this.ctx.emit('agent/error', { threadId, turnNo, error: stringify(err) })
+      throw err
+    } finally {
+      clearTimeout(timer)
+    }
+
     return answer
   }
 
