@@ -32,6 +32,7 @@ export default class ProviderService extends Service {
       maxRetries: 2,
       configuration: { baseURL: config.baseUrl }
     })
+    console.log(`[provider] 当前模型：${config.model}`)
   }
 
   /** 共享模型客户端（identify 路由与 agent run 复用同一实例） */
