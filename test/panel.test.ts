@@ -64,14 +64,15 @@ function seedTurn(
     .run()
 }
 
-test('getOverview：按 status 聚合计数', () => {
+test('getOverview：按 thread 最近一条 trace 的 status 聚合计数', () => {
   seedTrace({ threadId: 't1', status: 'pending' })
   seedTrace({ threadId: 't1', status: 'done', createdAt: '2026-08-29 10:00:00' })
   seedTrace({ threadId: 't2', status: 'failed', createdAt: '2026-08-29 11:00:00' })
   const overview = ctx.panel.getOverview()
-  assert.equal(overview.counts.pending, 1)
+  // 每 thread 只计一次，取最近一条 trace 的状态：t1→done，t2→failed
   assert.equal(overview.counts.done, 1)
   assert.equal(overview.counts.failed, 1)
+  assert.equal(overview.counts.pending, 0)
   assert.equal(overview.counts.processing, 0)
 })
 

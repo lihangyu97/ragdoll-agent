@@ -88,13 +88,33 @@ export default class PanelService extends Service {
   getOverview(): OverviewData {
     const db = this.ctx.database.db
 
+    // 顶部 4 个状态卡按 thread 统计：取每 thread 最近一条 trace 的状态（与列表页 lastStatus 同口径）
+    // 外层表必须显式加前缀（同 listThreads 的坑：drizzle 单表查询渲染列不带表前缀，会被内层 at 遮蔽）
+    // SQLite 对 select 别名 + 关联子查询直接 GROUP BY 会算错，先包一层子查询再分组
+    const outer = sql.raw('"agent_threads"."thread_id"')
+    const lastStatus = sql<string | null>`(
+      select at.status from agent_traces at
+      where at.thread_id = ${outer}
+      order by at.id desc limit 1
+    )`
     const countRows = db
-      .select({ status: agentTraces.status, count: sql<number>`count(*)`.as('count') })
-      .from(agentTraces)
-      .groupBy(agentTraces.status)
+      .select({
+        status: sql<string | null>`status`,
+        count: sql<number>`count(*)`.as('count')
+      })
+      .from(
+        db
+          .select({ status: lastStatus.as('status') })
+          .from(agentThreads)
+          .as('t')
+      )
+      .groupBy(sql`status`)
       .all()
     const counts: TraceStatusCounts = { pending: 0, processing: 0, done: 0, failed: 0 }
-    for (const row of countRows) counts[row.status as TraceStatus] = row.count
+    for (const row of countRows) {
+      // 无 trace 的 thread 状态为 null，跳过
+      if (row.status && row.status in counts) counts[row.status as TraceStatus] = row.count
+    }
 
     // 'YYYY-MM-DD HH:MM:SS' 的字典序即时间序，直接按表达式分组/排序
     const hourExpr = sql`strftime('%Y-%m-%d %H:00:00', ${agentTraces.createdAt})`

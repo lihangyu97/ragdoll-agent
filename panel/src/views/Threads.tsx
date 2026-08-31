@@ -26,11 +26,10 @@ function TurnEntry({ turn }: { turn: TurnRow }) {
     )
   } else if (turn.hookType === 'TOOL_RESULT') {
     body = <Json text={turn.toolsResult} />
+  } else if (turn.hookType === 'ERROR') {
+    body = <Json text={turn.content} />
   } else {
-    body =
-      turn.hookType === 'ERROR'
-        ? (turn.content ?? '(无内容)')
-        : turn.content || <span className="text-zinc-600">-</span>
+    body = turn.content || <span className="text-zinc-600">-</span>
   }
 
   return (
@@ -39,7 +38,7 @@ function TurnEntry({ turn }: { turn: TurnRow }) {
       <span className="w-28 shrink-0 truncate pt-0.5 font-mono text-xs text-zinc-600">
         {turn.node ?? ''}
       </span>
-      <div className="min-w-0 flex-1 font-mono text-xs whitespace-pre-wrap break-words text-zinc-300">
+      <div className="min-w-0 flex-1 font-mono text-xs whitespace-pre-wrap wrap-anywhere text-zinc-300">
         {body}
       </div>
     </div>
@@ -104,6 +103,11 @@ function ThreadItem({
       }`}
     >
       <div className="flex items-center gap-2">
+        {thread.agentId && (
+          <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-emerald-400">
+            {thread.agentId}
+          </span>
+        )}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-400">
           {thread.threadId}
         </span>
@@ -137,9 +141,13 @@ export default function ThreadsView({
   const list = useMemo(() => threads ?? [], [threads])
 
   return (
-    <div className="grid grid-cols-[320px_1fr] items-start gap-4">
-      <Card title={`Threads（${list.length}）`}>
-        <div className="-m-4 max-h-[calc(100vh-200px)] space-y-1 overflow-auto p-4">
+    <div className="grid h-full min-h-0 grid-cols-[320px_1fr] gap-4 overflow-hidden">
+      <Card
+        className="flex h-full min-h-0 flex-col"
+        bodyClassName="min-h-0 flex-1 overflow-hidden"
+        title={`Threads（${list.length}）`}
+      >
+        <div className="h-full space-y-1 overflow-auto overscroll-none">
           {list.length === 0 && <Empty>还没有会话</Empty>}
           {list.map(t => (
             <ThreadItem
@@ -152,7 +160,7 @@ export default function ThreadsView({
         </div>
       </Card>
 
-      <div>
+      <div className="min-h-0 min-w-0 overflow-auto overscroll-none">
         {threadId ? (
           <ThreadReplay threadId={threadId} />
         ) : (
