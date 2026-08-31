@@ -1,9 +1,7 @@
 # Ragdoll 架构说明
 
-> 状态：2026-08-29，心跳租约 + 队列索引实施、interrupt/resume 设计储备整理。
-> 本文件是仓库**唯一**的架构文档，由 docs/ 下多份旧文档合并而来（feishu-agent-integration /
-> cordis-migration / agent-capability-design / worker-multi-instance / orm-examples / TODO / lark.json /
-> KNOWN-ISSUES / TOOLS 均已删除并入本文）。编码原则见仓库根 `AGENTS.md`。
+> 本文件是仓库**唯一**的架构文档，由 docs/ 下多份旧文档合并而来（均已删除并入本文）。
+> 编码原则见仓库根 `AGENTS.md`。
 
 ---
 
@@ -18,13 +16,14 @@
 
 ## 2. 四大模块与目录
 
-| 模块                  | 目录                                                           | 职责                                                                                       |
-| --------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| **出入站**（channel） | `src/services/channel/`                                        | 渠道编排（`ChannelService`）+ 渠道契约（`types.ts`）+ 适配器（`adapters/lark/`）           |
-| **调用器**（worker）  | `src/services/worker/`                                         | 轮询队列、路由归属、执行编排、出站回复                                                     |
-| **agent**             | `src/services/agent/`                                          | 模型层（`provider/`）+ 能力注册表（`capability/`，数据面）+ 执行（`AgentService`，执行面） |
-| **持久化**（data）    | `src/services/data/`                                           | `database` + `traces` / `threads` / `turns` / `channels` repository                        |
-| **观察面板**（panel） | `panel/` + `src/services/data/panel/` + `src/plugins/panel.ts` | 前端 Vite 子包 + 只读查询 Service + HTTP 服务插件                                          |
+| 模块                     | 目录                                                           | 职责                                                                                       |
+| ------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **出入站**（channel）    | `src/services/channel/`                                        | 渠道编排（`ChannelService`）+ 渠道契约（`types.ts`）+ 适配器（`adapters/lark/`）           |
+| **调用器**（worker）     | `src/services/worker/`                                         | 轮询队列、路由归属、执行编排、出站回复                                                     |
+| **agent**                | `src/services/agent/`                                          | 模型层（`provider/`）+ 能力注册表（`capability/`，数据面）+ 执行（`AgentService`，执行面） |
+| **持久化**（data）       | `src/services/data/`                                           | `database` + `traces` / `threads` / `turns` / `channels` repository                        |
+| **观察面板**（panel）    | `panel/` + `src/services/data/panel/` + `src/plugins/panel.ts` | 前端 Vite 子包 + 只读查询 Service + HTTP 服务插件                                          |
+| **demo agent**（agents） | `src/agents/`                                                  | 示例 agent（home / weather）：definition + 工具 + skill 声明式组合，验证 capability 注册   |
 
 **Service / plugin 拆分约定**：`services/**` 是可注入的能力（含数据访问），构造器无副作用、不自启——测试只挂 Service 即可用内存库跑；`plugins/*.ts` 是生命周期接线的唯一位置（Service 的 start/stop、Config 校验、对外部世界的接线如 HTTP/渠道/事件订阅）。原因：cordis 4 rc 的 Service 无自动启动钩子，`app.plugin(Service)` 只实例化不启动，必须有插件层调 start/stop。纯转发的薄插件（如 `plugins/worker.ts`）也保留此结构，换全仓库统一的心智模型。
 
@@ -91,7 +90,7 @@ interface InboundMessage {
 
 ### 3.2 agent/* 事件：框架无关载荷（`src/services/agent/steps.ts`）
 
-`AgentService` 对外只有 `run(input, threadId, agentId)` 与 `identify(input)` 两个签名（已中立）；langchain 消息在 run 内部转换成中立载荷再发事件，**全仓库只有 `src/services/agent/` 内部 + `src/plugins/weather/`（demo 工具）能 import `@langchain/*`**：
+`AgentService` 对外只有 `run(input, threadId, agentId)` 与 `identify(input)` 两个签名（已中立）；langchain 消息在 run 内部转换成中立载荷再发事件，**全仓库只有 `src/services/agent/` 内部 + `src/agents/`（demo 工具）能 import `@langchain/*`**：
 
 | 事件                | 载荷（统一 payload，身份字段在 `AgentEventBase`） | 订阅方                |
 | ------------------- | ------------------------------------------------- | --------------------- |
@@ -118,13 +117,14 @@ interface InboundMessage {
 
 ## 4. 事件协议一览
 
-| 事件                 | 模式        | 用途                                                                   |
-| -------------------- | ----------- | ---------------------------------------------------------------------- |
-| `agent/*`（六个）    | `emit`      | 执行观测（载荷框架无关，见 §3.2）                                      |
-| `message/received`   | `emit`      | channel dispatch 后广播 `{ channel, threadId, text }`，观察/审计用     |
-| `trace/status`       | `emit`      | worker 状态流转广播 `{ threadId, status }`                             |
-| `agent/resolve`      | `bail`      | 规则层路由：监听器返回 agentId 即命中（确定性规则），未命中走 LLM 识别 |
-| `agent/prompt-build` | `waterfall` | 组装期改写 systemPrompt（守卫、插件注入）                              |
+| 事件                  | 模式        | 用途                                                                             |
+| --------------------- | ----------- | -------------------------------------------------------------------------------- |
+| `agent/*`（六个）     | `emit`      | 执行观测（载荷框架无关，见 §3.2）                                                |
+| `message/received`    | `emit`      | channel dispatch 后广播 `{ channel, threadId, text }`，观察/审计用               |
+| `trace/status`        | `emit`      | worker 状态流转广播 `{ threadId, status }`                                       |
+| `agent/resolve`       | `bail`      | 规则层路由：监听器返回 agentId 即命中（确定性规则），未命中走 LLM 识别           |
+| `agent/prompt-build`  | `waterfall` | 组装期改写 systemPrompt（守卫、插件注入）                                        |
+| `agent/system-prompt` | `waterfall` | 运行期每轮改写 systemPrompt（带 thread/turn/agentId/input 上下文，插件可选改写） |
 
 ## 5. 扩展指南
 
@@ -145,15 +145,15 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 
 ### 新能力（工具 / skill / definition）
 
-全部经 `ctx.capability` 注册（`src/services/agent/capability/CapabilityService.ts`），注册即 `version +1` → agent 运行时失效重建：
+全部经 `ctx.capability` 注册（`src/services/agent/capability/CapabilityService.ts`），注册即 `version +1`；`AgentService` 每轮 run 重新 `assemble` + `createAgent`（无运行时缓存，systemPrompt 每轮可被 `agent/system-prompt` 改写）：
 
-- `registerTool(tool)`：领域工具（langchain `ClientTool`）；系统工具（read_file/write_file/…，平台原语）构造时 seed，自动进每个 agent，不可同名注册/注销
+- `registerTool(tool)`：领域工具（langchain `ClientTool`）；系统工具（read_file/write_file/…，平台原语）构造时 seed，默认进每个 agent（chatOnly 纯聊天除外），不可同名注册/注销
 - `registerSkill(skill)`：`{ name, description, trigger?, instructions, resources?, tools?, license?, compatibility?, metadata?, scripts? }`；默认 `catalog` 懒加载——**目录注册表驱动**（列出全部已注册技能，`def.skills` 不参与过滤，往 `skills/` 丢技能即对所有 catalog agent 可发现）+ 内置 `load_skill(name)` 工具（支持 `resource` 参数按需加载技能文件，渐进披露对齐 agentskills.io 规范）；`full` 模式保持 opt-in（只编译 `def.skills` 声明的技能 instructions），小技能集可用
 - **文件技能（agentskills.io 标准格式）**：`skill-loader` 插件启动时扫描 `skillsRoot`（默认 `skills`，`RAGDOLL_SKILLS_ROOT` env）下 `<name>/SKILL.md`（YAML frontmatter + 正文），校验命名/必填后注册进 capability；`references/` `assets/` `scripts/` 下文本文件进 `resources`（scripts 另有 `scripts` 执行索引）；与代码注册同名 → 文件版覆盖。`license`/`compatibility`/`metadata` 为宿主侧字段，存而不渲染（不进 prompt）
 - **技能脚本执行（`run_skill_script`）**：`CapabilityService` 开 `enableSkillScripts`（`RAGDOLL_ENABLE_SKILL_SCRIPTS=true`）后注入；仅执行 `skills/<name>/scripts/` 白名单索引内的脚本，解释器白名单（bash/sh、python3、node），`execFile` 无 shell 注入面，cwd 限定技能目录 + 超时 + 输出截断；与 `run_command` 同为演示级护栏，真隔离需 OS 沙箱/容器
-- `registerDefinition(def)`：`{ id, basePrompt, personas?, skills?, skillMode?, tools? }` 声明式规格，`assemble(def)` 产出 `AgentSpec`（systemPrompt + tools）
+- `registerDefinition(def)`：`{ id, basePrompt, personas?, skills?, skillMode?, tools?, chatOnly? }` 声明式规格，`assemble(def)` 产出 `AgentSpec`（systemPrompt + tools）
 
-## 6. 待办与设计储备
+## 6. 待办
 
 ### P1：knowledge + guardrails + 观测增强
 
@@ -166,47 +166,10 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 - [ ] telegram adapter（实现 ChannelAdapter 验证插拔，同时验证 threadId 前缀约定）
 - [ ] 换 agent 框架时拆 backend 适配层（当前泄漏已堵死，改动收敛在 agent 模块）
 
-### 设计储备：langgraph interrupt / resume（人工审批 / 对话暂停）
+### P3：暂停/恢复 + 飞书卡片
 
-> 2026-08-29 调研结论（仓库内 langgraph 1.4.10，`interrupt` / `Command` API 已具备）。
-> 触发场景：P1 guardrails 的高危工具审批、对话暂停恢复。**方案已定稿（2026-08-30），未实施**。
-
-**核心机制**：图执行中调用 `interrupt(payload)` 会抛特殊的 `GraphInterrupt`（不是错误），langgraph 捕获后把整张图的执行状态写进 checkpointer 并正常返回——进程此后可直接死掉，状态在 SQLite 里不丢。恢复时对同一 `thread_id` 传 `new Command({ resume: value })`（而非新消息），langgraph 加载 checkpoint 回到挂起节点。
-
-**一个反直觉细节**：恢复时**节点函数从头重放**，重放走到 `interrupt()` 不再抛暂停，而是直接返回 resume 传入的值。推论：interrupt 之前的代码重放会再跑一遍，断点前不能有不可重复的副作用。
-
-**两种用途（勿混淆）**：
-
-1. **人工审批（设计初衷）**：高危工具执行前 interrupt 问人，用户确认后 resume 继续。guardrails 的天然实现路径，无需自建审批协议。
-2. **跨进程崩溃恢复**：interrupt/resume **不会自动续跑**——挂起后必须有存活方主动 resume。调度部分仍归心跳租约（sweep 重派），它只提供"状态没丢、可精确续跑"的能力。
-
-**实施方案（2026-08-30 定稿，待实施）**：
-
-**前提——最小触发器**：仓库目前无任何 `interrupt()` 调用，只做基建则挂起分支是死代码。先加 `ask_human` 系统工具（`systemTools.ts`，实现即 `interrupt({ question, options })`，interrupt 返回值 = 用户答复，直接作为工具结果回给模型），作为触发器兼验证载体。将来 guardrails 高危审批换 `HumanInTheLoopMiddleware`（langchain 1.x createAgent 官方支持，内部同机制），基建零改动。`interrupt()` 放工具第一行，无副作用，规避重放问题。
-
-**数据模型**：`agent_threads` 加一列 `suspendPayload`（text，nullable，挂起时写 interrupt payload JSON，恢复/取消时清空，**非空即挂起**）。不动 `status` 列（ACTIVE/INACTIVE 是启用语义，与"运行中挂起"正交）。
-
-**trace 加 `SUSPENDED` 状态**（关键决策，调研稿只说"不标 DONE"是不够的）：保持 processing 会被租约 90s 回收重跑挂起轮；标 done 则用户收不到 question。`suspended` 天然不被 sweep/claim 碰（只认 pending）——挂起是"在等人"，本不该被重派，崩溃恢复语义自洽。
-
-**四处改动落成文件**：
-
-1. run 收尾（`AgentService.run`）：stream 循环结束后 `agent.getState()` 查 tasks 挂起 interrupt（不解析流事件）；返回值 `string | null` 改判别联合 `{ status: 'done' | 'suspended', answer?, question? }`；挂起时写 `suspendPayload` + emit `agent/suspend`（turn-recorder 记 `SUSPEND` hook）+ trace 标 suspended + 回复 question
-2. resume 分叉（`WorkerService.process` 开头）：查 `thread.suspendPayload` 非空 → `agent.stream(new Command({ resume: inputText }))`（输入是 Command 非 HumanMessage），事件管线全复用；**跳过路由**（resolveAgentId 的规则层/LLM 识别都不走，挂起前 thread 必已绑定 agent）；完成后清空 suspendPayload、正常 DONE + 回复
-3. 观测层：**resume 开新轮**（正常分配新 turnNo、正常 emit agent/input，INPUT 内容前缀 `[resume]`），挂起轮与恢复轮在 `agent_turns` 各自完整，turn-recorder 零改动
-4. lark 按钮（用户下一条消息的卡片形态）：SDK 长连接支持 `card.action.trigger`（已核 `RawCardActionEvent`：`operator.open_id` / `action.value` / `context.open_message_id`，**无 thread_id**）
-
-**lark 卡片按钮**：
-
-- `OutboundReply` 加可选 `card` 字段，`send` 发 `msg_type: 'interactive'`；卡片内容取自 suspendPayload 的 `{ question, options }`，无 options 则回纯文本
-- 按钮 value 嵌上下文：`{ "resume": "yes", "threadId": "lark:p2p:oc_xxx" }`——点击事件没有 thread_id（群话题拿不到），嵌进 value 免反查
-- adapter 注册 `card.action.trigger` → 归一化 InboundMessage：threadId ← 按钮 value；text ← resume 值；senderId ← operator.open_id；合成幂等键 messageId = `card:${open_message_id}:${operator.open_id}`（同一人同一卡连点/WS 重推在 channel_messages 唯一索引处判重）→ 走现有 dispatch 管线
-- 点击回执给 toast 即可；"点击后按钮置灰"需留存卡片 message_id 做卡片更新，第一版不做
-- 过期点击：旧卡片点击入队后 thread 已无挂起 → worker 识别出按钮 payload 结构（固定 JSON）直接标 done 忽略，不当新任务发给 agent
-- 取消场景不专门做：挂起后用户回"算了"，文本直接作为 resume 值进模型自行理解
-
-**实施顺序**：① schema 加 suspendPayload（清库 + `pnpm db:generate`）→ ② TracesService 加 SUSPENDED（不参与 sweep/claim，单测）→ ③ ask_human 工具 + run 挂起检测与返回值改造（测试 interrupt 抛出 / getState 判别）→ ④ worker resume 分叉 + 挂起收尾（集成测试：挂起 → resume → DONE 事件序列）→ ⑤ lark 卡片与按钮 → 回归现有队列/租约测试。
-
-普通回复 markdown 卡片化（改 send 消息类型 + 卡片模板）与本方案无耦合，后续单独做。
+- [ ] 暂停/恢复 agent（langgraph interrupt/resume）：`ask_human` 工具触发挂起（高危工具人工审批 / 对话暂停），`Command({ resume })` 恢复；挂起与心跳租约恢复语义正交
+- [ ] 飞书渲染 markdown card：普通回复卡片化（改 `send` 消息类型 + 卡片模板）；挂起问答的卡片按钮（value 嵌 threadId + resume 值）
 
 ## 7. 约定与坑
 
@@ -240,7 +203,7 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 
 > 现有护栏（路径前缀校验 / 命令白名单 / 解释器白名单）均为演示级；最终边界 = OS 沙箱/容器（P1 guardrails）。
 
-- **系统工具默认注入所有 agent**：六个原语无法按 definition 裁剪，guardrails 前至少支持 definition 级白/黑名单
+- **系统工具默认注入所有非 chatOnly agent**：六个原语无法按 definition 裁剪，guardrails 前至少支持 definition 级白/黑名单
 - **`safePath` 不解析 symlink**：`resolve()` + 前缀判断不 `realpath`，沙箱内指向外部的符号链接即可越界
 - **`run_command` 白名单是前缀匹配**：`ls; rm -rf …` 拼接即绕过；启用时建议仅允许无参数固定命令或 argv 精确匹配（现默认已禁用）
 - **`run_skill_script` 的脚本内容随时可改**：白名单锁定路径不是内容；默认关（现默认已关）
@@ -249,9 +212,8 @@ worker / agent / 持久化**零改动**（threadId 记得加 `telegram:` 前缀�
 ### 8.3 工程卫生
 
 - ~~`AGENST.md` 拼写错误~~（已改名 `AGENTS.md`）、~~`identify` 死参数 `chatType`~~（已删除）
-- **无 CI**：10 个测试文件覆盖不错，但只能本地手动跑；建议最小 CI = `typecheck + lint + test + format:check`
+- **无 CI**：12 个测试文件覆盖不错，但只能本地手动跑；建议最小 CI = `typecheck + lint + test + format:check`
 - **依赖 cordis `4.0.0-rc.8` / loader `rc` 版本**：pre-release 框架 API 变动风险，升级时留意 changelog
-- **`answer` 取「流里最后一个非工具消息」**：中间节点产出非空文本会覆盖语义上的最终答案；换框架/加子图时要重审
 
 ## 附录
 
