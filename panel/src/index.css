@@ -1,5 +1,12 @@
 @import 'tailwindcss';
 
+html,
+body {
+  /* 拉满高度时超出的边缘区域（回弹露白）也保持深色，并禁止根滚动容器的 overscroll 回弹 */
+  background-color: #09090b;
+  overscroll-behavior: none;
+}
+
 body {
   font-family:
     ui-sans-serif,
@@ -8,4 +15,13 @@ body {
     'PingFang SC',
     'Microsoft YaHei',
     sans-serif;
+}
+
+/* 隐藏全部滚动条（Firefox/IE 用 scrollbar-width，WebKit 用伪元素） */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
 }

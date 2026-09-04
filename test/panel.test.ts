@@ -64,14 +64,15 @@ function seedTurn(
     .run()
 }
 
-test('getOverview：按 status 聚合计数', () => {
+test('getOverview：按 thread 最近一条 trace 的 status 聚合计数', () => {
   seedTrace({ threadId: 't1', status: 'pending' })
   seedTrace({ threadId: 't1', status: 'done', createdAt: '2026-08-29 10:00:00' })
   seedTrace({ threadId: 't2', status: 'failed', createdAt: '2026-08-29 11:00:00' })
   const overview = ctx.panel.getOverview()
-  assert.equal(overview.counts.pending, 1)
+  // 每 thread 只计一次，取最近一条 trace 的状态：t1→done，t2→failed
   assert.equal(overview.counts.done, 1)
   assert.equal(overview.counts.failed, 1)
+  assert.equal(overview.counts.pending, 0)
   assert.equal(overview.counts.processing, 0)
 })
 
@@ -164,26 +165,53 @@ test('listLogs：level / threadId 过滤，倒序', () => {
   insert('error', 't2')
 
   const all = ctx.panel.listLogs()
-  assert.equal(all.length, 3)
-  assert.equal(all[0]!.level, 'error') // id 倒序
+  assert.equal(all.items.length, 3)
+  assert.equal(all.nextCursor, null) // 不足一页，没有更多
+  assert.equal(all.items[0]!.level, 'error') // id 倒序
 
   const warns = ctx.panel.listLogs({ level: 'warn' })
-  assert.equal(warns.length, 1)
-  assert.equal(warns[0]!.threadId, 't1')
+  assert.equal(warns.items.length, 1)
+  assert.equal(warns.items[0]!.threadId, 't1')
 
   const t2 = ctx.panel.listLogs({ threadId: 't2' })
-  assert.equal(t2.length, 1)
-  assert.equal(t2[0]!.level, 'error')
+  assert.equal(t2.items.length, 1)
+  assert.equal(t2.items[0]!.level, 'error')
 })
 
-test('listLogs：limit 生效', () => {
+test('listLogs：limit 生效，多出的用 nextCursor 返回', () => {
   for (let i = 0; i < 5; i++) {
     ctx.database.db
       .insert(logger)
       .values({ level: 'info', message: `m${i}` })
       .run()
   }
-  assert.equal(ctx.panel.listLogs({ limit: 3 }).length, 3)
+  const page1 = ctx.panel.listLogs({ limit: 3 })
+  assert.equal(page1.items.length, 3)
+  assert.equal(page1.items[0]!.message, 'm4') // id 倒序
+  assert.equal(page1.nextCursor, page1.items[page1.items.length - 1]!.id)
+
+  // 用 nextCursor 续拉，且 id 不重叠
+  const page2 = ctx.panel.listLogs({ limit: 3, beforeId: page1.nextCursor! })
+  assert.equal(page2.items.length, 2)
+  assert.equal(page2.nextCursor, null)
+  const ids = [...page1.items, ...page2.items].map(r => r.id)
+  assert.equal(new Set(ids).size, 5)
+})
+
+test('listLogs：from / to 时间范围过滤', () => {
+  const insert = (message: string, createdAt: string) =>
+    ctx.database.db.insert(logger).values({ level: 'info', message, createdAt }).run()
+  insert('early', '2026-08-29 09:00:00')
+  insert('mid', '2026-08-29 12:00:00')
+  insert('late', '2026-08-29 18:00:00')
+
+  const range = ctx.panel.listLogs({ from: '2026-08-29 10:00:00', to: '2026-08-29 15:00:00' })
+  assert.equal(range.items.length, 1)
+  assert.equal(range.items[0]!.message, 'mid')
+
+  const fromOnly = ctx.panel.listLogs({ from: '2026-08-29 13:00:00' })
+  assert.equal(fromOnly.items.length, 1)
+  assert.equal(fromOnly.items[0]!.message, 'late')
 })
 
 test('listThreads：无 trace 的 thread 排在最后（lastAt null）', () => {

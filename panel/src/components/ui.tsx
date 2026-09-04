@@ -4,11 +4,13 @@ export function Card({
   title,
   right,
   className = '',
+  bodyClassName = '',
   children
 }: {
   title?: ReactNode
   right?: ReactNode
   className?: string
+  bodyClassName?: string
   children: ReactNode
 }) {
   return (
@@ -19,7 +21,7 @@ export function Card({
           {right}
         </div>
       )}
-      <div className="p-4">{children}</div>
+      <div className={`p-4 ${bodyClassName}`}>{children}</div>
     </div>
   )
 }

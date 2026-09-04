@@ -1,13 +1,11 @@
 import { useState } from 'react'
 import Overview from './views/Overview'
 import ThreadsView from './views/Threads'
-import TracesView from './views/Traces'
 import LogsView from './views/Logs'
 
 const TABS = [
   { id: 'overview', label: '总览' },
   { id: 'threads', label: 'Threads' },
-  { id: 'traces', label: 'Traces' },
   { id: 'logs', label: '日志' }
 ] as const
 
@@ -24,9 +22,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-200">
+    <div className="flex h-screen flex-col bg-zinc-950 text-zinc-200">
       <header className="flex items-center gap-6 border-b border-zinc-800 px-6 py-3">
-        <span className="font-mono text-sm font-bold text-emerald-400">RAGDOLL PANEL</span>
+        <span className="font-mono text-sm font-bold text-emerald-400">RAGDOLL AGENT PANEL</span>
         <nav className="flex gap-1">
           {TABS.map(t => (
             <button
@@ -44,11 +42,20 @@ export default function App() {
         </nav>
         <span className="ml-auto font-mono text-xs text-zinc-600">3s 自动刷新</span>
       </header>
-      <main className="p-6">
-        {tab === 'overview' && <Overview onOpenThread={openThread} />}
-        {tab === 'threads' && <ThreadsView threadId={threadId} onSelect={setThreadId} />}
-        {tab === 'traces' && <TracesView onOpenThread={openThread} />}
-        {tab === 'logs' && <LogsView />}
+      <main className="relative min-h-0 flex-1 overflow-hidden">
+        {TABS.map(t => (
+          <div
+            key={t.id}
+            inert={tab === t.id ? undefined : true}
+            className={`absolute inset-0 overflow-y-auto overscroll-none p-6 transition-opacity duration-200 ${
+              tab === t.id ? 'z-10 opacity-100' : 'pointer-events-none z-0 opacity-0'
+            }`}
+          >
+            {t.id === 'overview' && <Overview onOpenThread={openThread} />}
+            {t.id === 'threads' && <ThreadsView threadId={threadId} onSelect={setThreadId} />}
+            {t.id === 'logs' && <LogsView />}
+          </div>
+        ))}
       </main>
     </div>
   )

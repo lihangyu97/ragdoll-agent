@@ -43,10 +43,17 @@ export default {
 
     app.get('/api/logs', c => {
       const limit = Math.min(Number(c.req.query('limit')) || 200, 1000)
+      const beforeId = c.req.query('beforeId')
       return c.json(
         ctx.panel.listLogs({
           level: c.req.query('level'),
           threadId: c.req.query('threadId'),
+          beforeId:
+            beforeId !== undefined && Number.isFinite(Number(beforeId))
+              ? Number(beforeId)
+              : undefined,
+          from: c.req.query('from'),
+          to: c.req.query('to'),
           limit
         })
       )
